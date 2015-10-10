@@ -1,0 +1,25 @@
+package ssf;
+
+enum EventType{
+    EVENT_RAW = 1;
+    EVENT_HEARTBEAT = 2;
+    EVENT_ACK = 3;
+}
+
+message EventHeader{
+    optional uint64 sequenceId = 1;
+    optional uint64 hashCode = 2;
+    optional int32 nodeId = 3;
+    optional int32 msgType = 4;
+    optional int32 msgLen = 5;
+}
+
+message HeartBeat{
+    optional bool req = 1;
+    optional bool res = 2;
+}
+
+message EventACK{
+    optional int64 sequeceId = 1;
+    optional uint64 mask = 2;
+}
