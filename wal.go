@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/edsrzf/mmap-go"
+	"github.com/golang/glog"
 	"io"
 	"os"
 	"sync"
@@ -19,6 +20,7 @@ type WALMeta struct {
 }
 
 type WAL struct {
+	nodeId     int32
 	meta       WALMeta
 	logPath    string
 	log        *os.File
@@ -88,18 +90,31 @@ func (wal *WAL) replay(writer io.Writer) {
 			return
 		}
 		f.Seek(WALMetaSize+wal.meta.readedOffset, 0)
+		replayBuf := make([]byte, 0)
 		b := make([]byte, 4096)
 		for readedOffset < fileSize {
 			n, err := f.Read(b)
-			if nil != err {
+			if 0 == n {
 				break
 			}
-			_, err = writer.Write(b[0:n])
-			if nil != err {
-				break
+			if len(replayBuf) > 0 {
+				replayBuf = append(replayBuf, b[0:n]...)
+			} else {
+				replayBuf = b[0:n]
 			}
-			wal.meta.readedOffset += int64(n)
-			readedOffset += int64(n)
+			cursor := consumeEvents(replayBuf)
+			if cursor > 0 {
+				wbuf := make([]byte, cursor)
+				copy(wbuf, replayBuf[0:cursor])
+				replayBuf = replayBuf[cursor:]
+				_, err = writer.Write(wbuf)
+				if nil != err {
+					break
+				}
+				wal.meta.readedOffset += int64(cursor)
+				readedOffset += int64(cursor)
+			}
+
 		}
 		f.Close()
 		wal.logLock.Lock()
@@ -108,16 +123,18 @@ func (wal *WAL) replay(writer io.Writer) {
 			wal.meta.fileSize = 0
 			wal.log.Truncate(WALMetaSize)
 			wal.log.Seek(0, os.SEEK_END)
+			glog.Infof("Clear wal for virtual node:%d", wal.nodeId)
 		}
 		wal.syncMeta()
 		wal.logLock.Unlock()
 	}
 }
 
-func newWAL(nodeId int) (*WAL, error) {
+func newWAL(nodeId int32) (*WAL, error) {
 	wal := new(WAL)
-	wal.logPath = fmt.Sprintf("%s/wal/node_%d.wal", ClusterProcHome, nodeId)
-	os.Mkdir(ClusterProcHome+"/wal", 0660)
+	wal.nodeId = nodeId
+	wal.logPath = fmt.Sprintf("%s/wal/node_%d.wal", ssfCfg.ProcHome, nodeId)
+	os.MkdirAll(ssfCfg.ProcHome+"/wal", 0770)
 	var err error
 	wal.log, err = os.OpenFile(wal.logPath, os.O_CREATE|os.O_RDWR, 0660)
 	if nil != err {

@@ -5,10 +5,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
+	//"github.com/golang/glog"
 	"io"
 	"reflect"
 	"sync"
 )
+
+var MAGIC_EVENT_HEADER []byte = []byte("SSFE")
 
 type Event struct {
 	Sequence uint64
@@ -17,11 +20,29 @@ type Event struct {
 	Msg      proto.Message
 }
 
-var int2Reflect map[int]reflect.Type = make(map[int]reflect.Type)
-var reflect2Int map[reflect.Type]int = make(map[reflect.Type]int)
+type RawMessage []byte
+
+func (m *RawMessage) Reset() {
+}
+func (m *RawMessage) String() string {
+	return string(*m)
+}
+func (m *RawMessage) ProtoMessage() {
+}
+func (m *RawMessage) Marshal() ([]byte, error) {
+	return *m, nil
+}
+func (m *RawMessage) Unmarshal(p []byte) error {
+	*m = make([]byte, len(p))
+	copy(*m, p)
+	return nil
+}
+
+var int2Reflect map[int32]reflect.Type = make(map[int32]reflect.Type)
+var reflect2Int map[reflect.Type]int32 = make(map[reflect.Type]int32)
 var lk sync.Mutex // guards maps
 
-func RegisterEvent(eventType int, ev proto.Message) error {
+func RegisterEvent(eventType int32, ev proto.Message) error {
 	t := reflect.TypeOf(ev).Elem()
 	lk.Lock()
 	defer lk.Unlock()
@@ -36,7 +57,7 @@ func RegisterEvent(eventType int, ev proto.Message) error {
 	return nil
 }
 
-func getEventByType(eventType int) proto.Message {
+func getEventByType(eventType int32) proto.Message {
 	lk.Lock()
 	defer lk.Unlock()
 	oldType, ok := int2Reflect[eventType]
@@ -46,7 +67,7 @@ func getEventByType(eventType int) proto.Message {
 	return reflect.New(oldType).Interface().(proto.Message)
 }
 
-func getEventType(ev proto.Message) int {
+func getEventType(ev proto.Message) int32 {
 	lk.Lock()
 	defer lk.Unlock()
 	oldType, ok := reflect2Int[reflect.TypeOf(ev).Elem()]
@@ -57,23 +78,37 @@ func getEventType(ev proto.Message) int {
 }
 
 func readEvent(reader io.Reader) (*Event, error) {
-	var headerLen uint32
-	err := binary.Read(reader, binary.LittleEndian, &headerLen)
+	lenbuf := make([]byte, 8)
+	_, err := io.ReadFull(reader, lenbuf)
 	if nil != err {
 		return nil, err
 	}
+	if !bytes.Equal(lenbuf[0:4], MAGIC_EVENT_HEADER) {
+		return nil, fmt.Errorf("Invalid magic header")
+	}
+	var lengthHeader uint32
+	binary.Read(bytes.NewReader(lenbuf[4:8]), binary.LittleEndian, &lengthHeader)
+	msgLen := lengthHeader >> 8
+	headerLen := (lengthHeader & 0xFF)
+	if headerLen > 100 || msgLen > 512*1024*1024 {
+		return nil, fmt.Errorf("Too large msg header len:%d or body len:%d", headerLen, msgLen)
+	}
 	var header EventHeader
 	headerBuf := make([]byte, headerLen)
-	n, err := reader.Read(headerBuf)
-	if nil != err || n != len(headerBuf) {
+	_, err = io.ReadFull(reader, headerBuf)
+	if nil != err {
 		return nil, err
 	}
 	err = header.Unmarshal(headerBuf)
 	if nil != err {
 		return nil, err
 	}
-	dataBuf := make([]byte, header.GetMsgLen())
-	msg := getEventByType(int(header.GetMsgType()))
+	dataBuf := make([]byte, msgLen)
+	_, err = io.ReadFull(reader, dataBuf)
+	if nil != err {
+		return nil, err
+	}
+	msg := getEventByType(header.GetMsgType())
 	if nil == msg {
 		return nil, fmt.Errorf("No msg type found for:%d", header.GetMsgType())
 	}
@@ -95,12 +130,54 @@ func writeEvent(ev *Event, writer io.Writer) error {
 	if nil != err {
 		return err
 	}
+
 	var header EventHeader
+	header.MsgType = &(ev.MsgType)
+	msgLen := int32(len(dataBuf))
+	header.MsgLen = &msgLen
+	header.HashCode = &ev.HashCode
 	headbuf, _ := proto.Marshal(&header)
 	headerLen := uint32(len(headbuf))
-	binary.Write(&buf, binary.LittleEndian, &headerLen)
+
+	// length = msglength(3byte) + headerlen(1byte)
+	length := uint32(len(dataBuf))
+	length = (length << 8) + headerLen
+	buf.Write(MAGIC_EVENT_HEADER)
+	binary.Write(&buf, binary.LittleEndian, length)
+
 	buf.Write(headbuf)
 	buf.Write(dataBuf)
 	_, err = buf.WriteTo(writer)
+
 	return err
+}
+
+// return the index which have started is not a full event content
+func consumeEvents(p []byte) int {
+	cursor := 0
+	for {
+		if len(p) <= 8 {
+			return cursor
+		}
+		if !bytes.Equal(p[0:4], MAGIC_EVENT_HEADER) {
+			return cursor
+		}
+		var lengthHeader uint32
+		binary.Read(bytes.NewReader(p[4:8]), binary.LittleEndian, &lengthHeader)
+		msgLen := lengthHeader >> 8
+		headerLen := (lengthHeader & 0xFF)
+		if uint32(len(p)-8) < (msgLen + headerLen) {
+			return cursor
+		}
+		cursor += int(msgLen + headerLen + 8)
+		p = p[(msgLen + headerLen + 8):]
+	}
+	return cursor
+}
+
+func init() {
+	raw := RawMessage{}
+	hb := HeartBeat{}
+	RegisterEvent(int32(EventType_EVENT_RAW), &raw)
+	RegisterEvent(int32(EventType_EVENT_HEARTBEAT), &hb)
 }

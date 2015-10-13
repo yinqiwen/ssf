@@ -1,21 +1,32 @@
 package ssf
 
 import (
-// "encoding/json"
-// "github.com/samuel/go-zookeeper/zk"
-// "time"
+	// "encoding/json"
+	// "github.com/samuel/go-zookeeper/zk"
+	// "time"
+	//"fmt"
+	"crypto/md5"
+	"encoding/binary"
+	"github.com/golang/glog"
 )
 
 const (
-	NODE_ACTIVE  = 1
-	NODE_LOADING = 2
-	NODE_FAULT   = 3
+	NODE_ACTIVE  uint8 = 1
+	NODE_LOADING uint8 = 2
+	NODE_FAULT   uint8 = 3
 )
 
 type Node struct {
-	Id     int32
-	Addr   string
-	Status uint8
+	Id          int32
+	PartitionId int32
+	Addr        string
+	Status      uint8
+}
+
+type Partition struct {
+	Id    int32
+	Addr  string
+	Nodes []int32
 }
 
 type EventProcessor interface {
@@ -41,25 +52,27 @@ func (node *Node) isActive() bool {
 }
 
 type clusterTopo struct {
-	allNodes []Node
+	allNodes       []Node
+	partitions     []Partition
+	selfParitionId int32
 }
 
 var topo clusterTopo
 var ssfCfg ClusterConfig
-var ClusterProcHome string
 
 func getNodeByHash(hashCode uint64) *Node {
-	cursor := hashCode ^ uint64(len(topo.allNodes))
+	cursor := hashCode & uint64(len(topo.allNodes)-1)
 	return &(topo.allNodes[int(cursor)])
+}
+func getNodeById(id int32) *Node {
+	return &(topo.allNodes[int(id)])
+}
+func isSelfNode(node *Node) bool {
+	return node.PartitionId == topo.selfParitionId
 }
 
 type ServerData struct {
 	Listen string
-}
-
-type Partition struct {
-	Addr  string
-	Nodes []int
 }
 
 func retriveNodes() {
@@ -94,11 +107,54 @@ func startZkAgent() {
 }
 
 func buildNodeTopoFromConfig() {
-	// for i, server := range ssfCfg.SSFServers {
-	// 	var node Node
-	// 	node.Id = i
-	// 	node.Addr = server
-	// }
+	virtualNodeSize := 128
+	for len(ssfCfg.SSFServers) >= virtualNodeSize {
+		virtualNodeSize = virtualNodeSize * 2
+	}
+	virtualNodePerPartion := virtualNodeSize / len(ssfCfg.SSFServers)
+	topo.allNodes = make([]Node, virtualNodeSize)
+	topo.partitions = make([]Partition, len(ssfCfg.SSFServers))
+	k := 0
+	for i, server := range ssfCfg.SSFServers {
+		var partition Partition
+		partition.Addr = server
+		partition.Id = int32(i)
+		partition.Nodes = make([]int32, 0)
+		if server == ssfCfg.ListenAddr {
+			topo.selfParitionId = partition.Id
+		}
+		for j := 0; j < virtualNodePerPartion; j++ {
+			var node Node
+			node.Id = int32(k)
+			node.PartitionId = partition.Id
+			node.Addr = server
+			node.Status = NODE_ACTIVE
+			topo.allNodes[k] = node
+			partition.Nodes = append(partition.Nodes, node.Id)
+			k++
+		}
+		if i == len(ssfCfg.SSFServers)-1 {
+			for ; k < virtualNodeSize; k++ {
+				var node Node
+				node.Id = int32(k)
+				node.PartitionId = partition.Id
+				node.Addr = server
+				node.Status = NODE_ACTIVE
+				topo.allNodes[k] = node
+				partition.Nodes = append(partition.Nodes, node.Id)
+			}
+		}
+		topo.partitions[i] = partition
+	}
+	//glog.Info("###%v###", topo.allNodes)
+	//fmt.Printf("###%v###", topo.allNodes)
+}
+
+func HashCode(s []byte) uint64 {
+	sum := md5.Sum(s)
+	a := binary.LittleEndian.Uint64(sum[0:8])
+	b := binary.LittleEndian.Uint64(sum[8:16])
+	return a ^ b
 }
 
 func Start(cfg *ClusterConfig) {
@@ -107,6 +163,12 @@ func Start(cfg *ClusterConfig) {
 		startClusterServer(ssfCfg.ListenAddr)
 	} else if len(cfg.SSFServers) > 0 {
 		buildNodeTopoFromConfig()
+	} else {
+		glog.Error("Invalid config to start ssf.")
 	}
-	//startZkAgent()
+	if len(ssfCfg.ListenAddr) > 0 {
+		startClusterServer(ssfCfg.ListenAddr)
+	} else {
+		panic("No listen addr specified.")
+	}
 }

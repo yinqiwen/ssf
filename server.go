@@ -8,7 +8,6 @@ import (
 
 type ServerConn struct {
 	ackWindow uint64 //every 64 events
-
 }
 
 func startClusterServer(laddr string) error {
@@ -22,6 +21,8 @@ func startClusterServer(laddr string) error {
 		for {
 			ev, err := readEvent(bc)
 			if nil != err {
+				glog.Errorf("Failed to read event for error:%v", err)
+				c.Close()
 				return
 			} else {
 				if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {

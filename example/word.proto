@@ -1,0 +1,7 @@
+
+package main;
+
+message Word{
+    optional string word = 1;
+    optional int32 count = 2;
+}
