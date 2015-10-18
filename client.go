@@ -21,7 +21,7 @@ type NodeIOEvent struct {
 func newNodeEvent(msg proto.Message, hashCode uint64) *NodeIOEvent {
 	var event Event
 	event.HashCode = hashCode
-	event.MsgType = int32(getEventType(msg))
+	event.MsgType = int32(GetEventType(msg))
 	event.Msg = msg
 	var buf bytes.Buffer
 	writeEvent(&event, &buf)
@@ -242,7 +242,7 @@ func (c *clusterClient) emit(msg proto.Message, hashCode uint64) {
 		var event Event
 		event.HashCode = hashCode
 		event.Msg = msg
-		event.MsgType = getEventType(msg)
+		event.MsgType = GetEventType(msg)
 		ssfCfg.Handler.OnEvent(&event)
 		return
 	}

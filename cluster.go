@@ -4,10 +4,13 @@ import (
 	// "encoding/json"
 	// "github.com/samuel/go-zookeeper/zk"
 	// "time"
-	//"fmt"
 	"crypto/md5"
 	"encoding/binary"
+	"fmt"
 	"github.com/golang/glog"
+	"io/ioutil"
+	"net"
+	"os"
 )
 
 const (
@@ -111,16 +114,33 @@ func buildNodeTopoFromConfig() {
 	for len(ssfCfg.SSFServers) >= virtualNodeSize {
 		virtualNodeSize = virtualNodeSize * 2
 	}
+	host, port, err := net.SplitHostPort(ssfCfg.ListenAddr)
+	localAddr := ssfCfg.ListenAddr
+	if nil == err && host == "0.0.0.0" {
+		h, _ := os.Hostname()
+		addrs, _ := net.LookupIP(h)
+		for _, addr := range addrs {
+			if ipv4 := addr.To4(); ipv4 != nil {
+				localAddr = net.JoinHostPort(ipv4.String(), port)
+				break
+			}
+		}
+	}
 	virtualNodePerPartion := virtualNodeSize / len(ssfCfg.SSFServers)
 	topo.allNodes = make([]Node, virtualNodeSize)
 	topo.partitions = make([]Partition, len(ssfCfg.SSFServers))
 	k := 0
 	for i, server := range ssfCfg.SSFServers {
+		_, _, err = net.SplitHostPort(server)
+		if nil != err {
+			glog.Errorf("Invalid server address:%s", server)
+			continue
+		}
 		var partition Partition
 		partition.Addr = server
 		partition.Id = int32(i)
 		partition.Nodes = make([]int32, 0)
-		if server == ssfCfg.ListenAddr {
+		if server == ssfCfg.ListenAddr || server == localAddr {
 			topo.selfParitionId = partition.Id
 		}
 		for j := 0; j < virtualNodePerPartion; j++ {
@@ -164,10 +184,15 @@ func Start(cfg *ClusterConfig) {
 	} else if len(cfg.SSFServers) > 0 {
 		buildNodeTopoFromConfig()
 	} else {
-		glog.Error("Invalid config to start ssf.")
+		panic("Invalid config to start ssf.")
 	}
+
+	ioutil.WriteFile(ssfCfg.ProcHome+"/ssf.run", []byte(fmt.Sprintf("%d ", os.Getpid())), 0660)
 	if len(ssfCfg.ListenAddr) > 0 {
-		startClusterServer(ssfCfg.ListenAddr)
+		err := startClusterServer(ssfCfg.ListenAddr)
+		if nil != err {
+			panic(err)
+		}
 	} else {
 		panic("No listen addr specified.")
 	}

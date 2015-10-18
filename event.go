@@ -20,44 +20,53 @@ type Event struct {
 	Msg      proto.Message
 }
 
-type RawMessage []byte
+type RawMessage struct {
+	raw []byte
+}
 
 func (m *RawMessage) Reset() {
 }
 func (m *RawMessage) String() string {
-	return string(*m)
+	return string(m.raw)
 }
 func (m *RawMessage) ProtoMessage() {
 }
 func (m *RawMessage) Marshal() ([]byte, error) {
-	return *m, nil
+	return m.raw, nil
 }
 func (m *RawMessage) Unmarshal(p []byte) error {
-	*m = make([]byte, len(p))
-	copy(*m, p)
+	m.raw = p
 	return nil
+}
+func (m *RawMessage) Data() []byte {
+	return m.raw
+}
+
+func NewRawMessage(str string) *RawMessage {
+	msg := new(RawMessage)
+	msg.raw = []byte(str)
+	return msg
 }
 
 var int2Reflect map[int32]reflect.Type = make(map[int32]reflect.Type)
 var reflect2Int map[reflect.Type]int32 = make(map[reflect.Type]int32)
 var lk sync.Mutex // guards maps
 
-func RegisterEvent(eventType int32, ev proto.Message) error {
+func RegisterEvent(eventType int32, ev proto.Message) {
 	t := reflect.TypeOf(ev).Elem()
 	lk.Lock()
 	defer lk.Unlock()
 	if _, ok := int2Reflect[eventType]; ok {
-		return fmt.Errorf("Duplicate registration with type:%d", eventType)
+		panic(fmt.Errorf("Duplicate registration with type:%d", eventType))
 	}
 	if oldInt, ok := reflect2Int[t]; ok && eventType != oldInt {
-		return fmt.Errorf("Same type:%T already registed as:%d", ev, eventType)
+		panic(fmt.Errorf("Same type:%T already registed as:%d", ev, eventType))
 	}
 	int2Reflect[eventType] = t
 	reflect2Int[t] = eventType
-	return nil
 }
 
-func getEventByType(eventType int32) proto.Message {
+func GetEventByType(eventType int32) proto.Message {
 	lk.Lock()
 	defer lk.Unlock()
 	oldType, ok := int2Reflect[eventType]
@@ -67,7 +76,7 @@ func getEventByType(eventType int32) proto.Message {
 	return reflect.New(oldType).Interface().(proto.Message)
 }
 
-func getEventType(ev proto.Message) int32 {
+func GetEventType(ev proto.Message) int32 {
 	lk.Lock()
 	defer lk.Unlock()
 	oldType, ok := reflect2Int[reflect.TypeOf(ev).Elem()]
@@ -108,7 +117,7 @@ func readEvent(reader io.Reader) (*Event, error) {
 	if nil != err {
 		return nil, err
 	}
-	msg := getEventByType(header.GetMsgType())
+	msg := GetEventByType(header.GetMsgType())
 	if nil == msg {
 		return nil, fmt.Errorf("No msg type found for:%d", header.GetMsgType())
 	}
@@ -133,8 +142,6 @@ func writeEvent(ev *Event, writer io.Writer) error {
 
 	var header EventHeader
 	header.MsgType = &(ev.MsgType)
-	msgLen := int32(len(dataBuf))
-	header.MsgLen = &msgLen
 	header.HashCode = &ev.HashCode
 	headbuf, _ := proto.Marshal(&header)
 	headerLen := uint32(len(headbuf))

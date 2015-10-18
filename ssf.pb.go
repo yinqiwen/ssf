@@ -67,7 +67,6 @@ type EventHeader struct {
 	HashCode         *uint64 `protobuf:"varint,2,opt,name=hashCode" json:"hashCode,omitempty"`
 	NodeId           *int32  `protobuf:"varint,3,opt,name=nodeId" json:"nodeId,omitempty"`
 	MsgType          *int32  `protobuf:"varint,4,opt,name=msgType" json:"msgType,omitempty"`
-	MsgLen           *int32  `protobuf:"varint,5,opt,name=msgLen" json:"msgLen,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -99,13 +98,6 @@ func (m *EventHeader) GetNodeId() int32 {
 func (m *EventHeader) GetMsgType() int32 {
 	if m != nil && m.MsgType != nil {
 		return *m.MsgType
-	}
-	return 0
-}
-
-func (m *EventHeader) GetMsgLen() int32 {
-	if m != nil && m.MsgLen != nil {
-		return *m.MsgLen
 	}
 	return 0
 }
@@ -195,11 +187,6 @@ func (m *EventHeader) MarshalTo(data []byte) (int, error) {
 		data[i] = 0x20
 		i++
 		i = encodeVarintSsf(data, i, uint64(*m.MsgType))
-	}
-	if m.MsgLen != nil {
-		data[i] = 0x28
-		i++
-		i = encodeVarintSsf(data, i, uint64(*m.MsgLen))
 	}
 	if m.XXX_unrecognized != nil {
 		i += copy(data[i:], m.XXX_unrecognized)
@@ -320,9 +307,6 @@ func (m *EventHeader) Size() (n int) {
 	}
 	if m.MsgType != nil {
 		n += 1 + sovSsf(uint64(*m.MsgType))
-	}
-	if m.MsgLen != nil {
-		n += 1 + sovSsf(uint64(*m.MsgLen))
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -482,26 +466,6 @@ func (m *EventHeader) Unmarshal(data []byte) error {
 				}
 			}
 			m.MsgType = &v
-		case 5:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field MsgLen", wireType)
-			}
-			var v int32
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSsf
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[iNdEx]
-				iNdEx++
-				v |= (int32(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.MsgLen = &v
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSsf(data[iNdEx:])

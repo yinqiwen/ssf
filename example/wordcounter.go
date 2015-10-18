@@ -28,8 +28,8 @@ func (proc *MyProcessor) dump() {
 	fmt.Printf("\n")
 }
 
-func (proc *MyProcessor) parseLine(p []byte) {
-	ss := strings.Split(string(p), " ")
+func (proc *MyProcessor) parseLine(msg *ssf.RawMessage) {
+	ss := strings.Split(string(msg.Data()), " ")
 	for _, s := range ss {
 		var word Word
 		word.Word = &s
@@ -45,7 +45,7 @@ func (proc *MyProcessor) count(word *Word) {
 
 func (proc *MyProcessor) OnEvent(ev *ssf.Event) error {
 	if ev.MsgType == int32(ssf.EventType_EVENT_RAW) {
-		proc.parseLine(*(ev.Msg.(*ssf.RawMessage)))
+		proc.parseLine(ev.Msg.(*ssf.RawMessage))
 	} else if ev.MsgType == int32(WORD_COUNT_EVENT) {
 		proc.count(ev.Msg.(*Word))
 	}
@@ -64,8 +64,8 @@ func readSocket(l net.Listener) {
 		scanner := bufio.NewScanner(bc)
 		for scanner.Scan() {
 			line := scanner.Text()
-			rawMsg := ssf.RawMessage(line)
-			ssf.Emit(&rawMsg, ssf.HashCode([]byte(line)))
+			rawMsg := ssf.NewRawMessage(line)
+			ssf.Emit(rawMsg, ssf.HashCode([]byte(line)))
 		}
 		c.Close()
 	}
@@ -102,8 +102,8 @@ func main() {
 	var proc MyProcessor
 	proc.counts = make(map[string]uint64)
 	cfg.Handler = &proc
-	word := Word{}
-	ssf.RegisterEvent(WORD_COUNT_EVENT, &word)
+	//word := Word{}
+	ssf.RegisterEvent(WORD_COUNT_EVENT, &Word{})
 
 	go func() {
 		_ = <-sc

@@ -136,7 +136,7 @@ func newWAL(nodeId int32) (*WAL, error) {
 	wal.logPath = fmt.Sprintf("%s/wal/node_%d.wal", ssfCfg.ProcHome, nodeId)
 	os.MkdirAll(ssfCfg.ProcHome+"/wal", 0770)
 	var err error
-	wal.log, err = os.OpenFile(wal.logPath, os.O_CREATE|os.O_RDWR, 0660)
+	wal.log, err = os.OpenFile(wal.logPath, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0660)
 	if nil != err {
 		return wal, err
 	}
