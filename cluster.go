@@ -6,9 +6,9 @@ import (
 	// "time"
 	"crypto/md5"
 	"encoding/binary"
-	"fmt"
+	//"fmt"
 	"github.com/golang/glog"
-	"io/ioutil"
+	//"io/ioutil"
 	"net"
 	"os"
 )
@@ -166,8 +166,6 @@ func buildNodeTopoFromConfig() {
 		}
 		topo.partitions[i] = partition
 	}
-	//glog.Info("###%v###", topo.allNodes)
-	//fmt.Printf("###%v###", topo.allNodes)
 }
 
 func HashCode(s []byte) uint64 {
@@ -186,8 +184,7 @@ func Start(cfg *ClusterConfig) {
 	} else {
 		panic("Invalid config to start ssf.")
 	}
-
-	ioutil.WriteFile(ssfCfg.ProcHome+"/ssf.run", []byte(fmt.Sprintf("%d ", os.Getpid())), 0660)
+	initRoutine()
 	if len(ssfCfg.ListenAddr) > 0 {
 		err := startClusterServer(ssfCfg.ListenAddr)
 		if nil != err {

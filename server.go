@@ -2,12 +2,44 @@ package ssf
 
 import (
 	"bufio"
+	"bytes"
 	"github.com/golang/glog"
+	"github.com/yinqiwen/gotoolkit/ots"
 	"net"
+)
+
+const (
+	SSF_EVENT_CONN = 1
+	OTS_DEBUG_CONN = 2
 )
 
 type ServerConn struct {
 	ackWindow uint64 //every 64 events
+}
+
+func processSSFEventConnection(c net.Conn) {
+	bc := bufio.NewReader(c)
+	ignoreMagic := true
+	for {
+		ev, err := readEvent(bc, ignoreMagic)
+		ignoreMagic = false
+		if nil != err {
+			glog.Errorf("Failed to read event for error:%v", err)
+			c.Close()
+			return
+		} else {
+			if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {
+				//send heartbeat response back
+				var hbres HeartBeat
+				res := true
+				hbres.Res = &res
+				ev.Msg = &hbres
+				writeEvent(ev, c)
+			} else {
+				ssfCfg.Handler.OnEvent(ev)
+			}
+		}
+	}
 }
 
 func startClusterServer(laddr string) error {
@@ -17,25 +49,21 @@ func startClusterServer(laddr string) error {
 	}
 
 	process := func(c net.Conn) {
-		bc := bufio.NewReader(c)
-		for {
-			ev, err := readEvent(bc)
-			if nil != err {
-				glog.Errorf("Failed to read event for error:%v", err)
-				c.Close()
-				return
-			} else {
-				if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {
-					//send heartbeat response back
-					var hbres HeartBeat
-					res := true
-					hbres.Res = &res
-					ev.Msg = &hbres
-					writeEvent(ev, c)
-				} else {
-					ssfCfg.Handler.OnEvent(ev)
-				}
-			}
+		//test connection type
+		magicBuf := make([]byte, 4)
+		magic, err := readMagicHeader(c, magicBuf)
+		if nil != err {
+			glog.Errorf("Failed to read magic header for error:%v", err)
+			c.Close()
+			return
+		}
+		if bytes.Equal(magic, MAGIC_EVENT_HEADER) {
+			processSSFEventConnection(c)
+		} else if bytes.EqualFold(magic, MAGIC_OTSC_HEADER) {
+			ots.ProcessTroubleShooting(c)
+		} else {
+			glog.Errorf("Invalid magic header:%s", string(magic))
+			c.Close()
 		}
 	}
 

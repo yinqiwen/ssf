@@ -12,6 +12,7 @@ import (
 )
 
 var MAGIC_EVENT_HEADER []byte = []byte("SSFE")
+var MAGIC_OTSC_HEADER []byte = []byte("OTSC")
 
 type Event struct {
 	Sequence uint64
@@ -86,22 +87,45 @@ func GetEventType(ev proto.Message) int32 {
 	return oldType
 }
 
-func readEvent(reader io.Reader) (*Event, error) {
-	lenbuf := make([]byte, 8)
-	_, err := io.ReadFull(reader, lenbuf)
+func readMagicHeader(reader io.Reader, buf []byte) ([]byte, error) {
+	if len(buf) < 4 {
+		return nil, fmt.Errorf("Invalid buf space")
+	}
+	_, err := io.ReadFull(reader, buf)
 	if nil != err {
 		return nil, err
 	}
-	if !bytes.Equal(lenbuf[0:4], MAGIC_EVENT_HEADER) {
-		return nil, fmt.Errorf("Invalid magic header")
+	return buf[0:4], nil
+}
+
+func readEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
+	var lenbuf []byte
+	if !ignoreMagic {
+		lenbuf = make([]byte, 8)
+		magic, err := readMagicHeader(reader, lenbuf)
+		if nil != err {
+			return nil, err
+		}
+		if !bytes.Equal(magic, MAGIC_EVENT_HEADER) {
+			return nil, fmt.Errorf("Invalid magic header:%s", string(magic))
+		}
+		lenbuf = lenbuf[4:8]
+	} else {
+		lenbuf = make([]byte, 4)
+		_, err := io.ReadFull(reader, lenbuf)
+		if nil != err {
+			return nil, err
+		}
 	}
+
 	var lengthHeader uint32
-	binary.Read(bytes.NewReader(lenbuf[4:8]), binary.LittleEndian, &lengthHeader)
+	binary.Read(bytes.NewReader(lenbuf), binary.LittleEndian, &lengthHeader)
 	msgLen := lengthHeader >> 8
 	headerLen := (lengthHeader & 0xFF)
 	if headerLen > 100 || msgLen > 512*1024*1024 {
 		return nil, fmt.Errorf("Too large msg header len:%d or body len:%d", headerLen, msgLen)
 	}
+	var err error
 	var header EventHeader
 	headerBuf := make([]byte, headerLen)
 	_, err = io.ReadFull(reader, headerBuf)

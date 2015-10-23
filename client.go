@@ -114,7 +114,7 @@ func (nc *rawTcpConn) readloop() {
 			bc = bufio.NewReader(nc.conn)
 			reconnectAfter = 1 * time.Second
 		}
-		ev, err := readEvent(bc)
+		ev, err := readEvent(bc, false)
 		if nil != err {
 			glog.Warningf("Close connection to %s for reason:%v", nc.addr, err)
 			nc.close()
@@ -293,24 +293,12 @@ func (c *clusterClient) replayWals() {
 		}
 	}
 }
-
-func (c *clusterClient) routine() {
-	hbTickChan := time.NewTicker(time.Millisecond * 1000).C
-	checkTickChan := time.NewTicker(time.Millisecond * 5000).C
-	for {
-		select {
-		case <-hbTickChan:
-			c.checkPartitionConns()
-			c.nodeConnMu.Lock()
-			for _, conn := range c.allConns {
-				conn.heartbeat()
-			}
-			c.nodeConnMu.Unlock()
-		case <-checkTickChan:
-			c.checkHeartbeatTimeout()
-			c.replayWals()
-		}
+func (c *clusterClient) heartbeat() {
+	c.nodeConnMu.Lock()
+	for _, conn := range c.allConns {
+		conn.heartbeat()
 	}
+	c.nodeConnMu.Unlock()
 }
 
 func Emit(msg proto.Message, hashCode uint64) {
@@ -319,5 +307,4 @@ func Emit(msg proto.Message, hashCode uint64) {
 
 func init() {
 	ssfClient.allConns = make(map[string]*rawTcpConn)
-	go ssfClient.routine()
 }
