@@ -280,19 +280,32 @@ func (c *clusterClient) checkHeartbeatTimeout() {
 	c.nodeConnMu.Unlock()
 }
 func (c *clusterClient) replayWals() {
-	for _, wal := range c.nodeWals {
-		if nil != wal && !wal.empty() {
-			ev := newEmptyNodeEvent()
-			ev.wal = wal
-			conn, _, err := c.getNodeConn(getNodeById(wal.nodeId))
+	for i := 0; i < getClusterNodeSize(); i++ {
+		node := getNodeByHash(uint64(i))
+		if nil != node {
+			conn, wal, err := c.getNodeConn(node)
 			if nil != err {
-				glog.Errorf("Failed to retrive connection or wal to emit event for reason:%v", err)
-			} else {
+				glog.Errorf("Failed to retrive connection to node:%d for replay event for reason:%v", node.Id, err)
+				continue
+			}
+			if nil != wal && !wal.empty() {
+				glog.Infof("Try to replay WAL for node:%d with cacehd data size:%d", node.Id, wal.cachedDataSize())
+				ev := newEmptyNodeEvent()
+				ev.wal = wal
 				conn.write(ev)
 			}
 		}
 	}
 }
+
+func (c *clusterClient) printWalSizes() {
+	for _, wal := range c.nodeWals {
+		if nil != wal {
+			glog.Infof("WAL[%d] Cached Data Size:%d", wal.nodeId, wal.cachedDataSize())
+		}
+	}
+}
+
 func (c *clusterClient) heartbeat() {
 	c.nodeConnMu.Lock()
 	for _, conn := range c.allConns {

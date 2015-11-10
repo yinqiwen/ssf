@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"github.com/golang/glog"
 	"github.com/yinqiwen/gotoolkit/ots"
+	"io"
 	"net"
 )
 
@@ -24,7 +25,9 @@ func processSSFEventConnection(c net.Conn) {
 		ev, err := readEvent(bc, ignoreMagic)
 		ignoreMagic = false
 		if nil != err {
-			glog.Errorf("Failed to read event for error:%v", err)
+			if err != io.EOF {
+				glog.Errorf("Failed to read event for error:%v from %v", err, c.RemoteAddr())
+			}
 			c.Close()
 			return
 		} else {
@@ -53,7 +56,9 @@ func startClusterServer(laddr string) error {
 		magicBuf := make([]byte, 4)
 		magic, err := readMagicHeader(c, magicBuf)
 		if nil != err {
-			glog.Errorf("Failed to read magic header for error:%v", err)
+			if err != io.EOF {
+				glog.Errorf("Failed to read magic header for error:%v from %v", err, c.RemoteAddr())
+			}
 			c.Close()
 			return
 		}

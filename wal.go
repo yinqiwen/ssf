@@ -27,6 +27,7 @@ type WAL struct {
 	mapedMeta  mmap.MMap
 	logLock    sync.Mutex
 	replayLock sync.Mutex
+	replaying  bool
 	discard    bool
 }
 
@@ -66,6 +67,10 @@ func (wal *WAL) empty() bool {
 	return wal.meta.readedOffset >= wal.meta.fileSize
 }
 
+func (wal *WAL) cachedDataSize() int64 {
+	return wal.meta.fileSize - wal.meta.readedOffset
+}
+
 func (wal *WAL) nextSequenceId() uint64 {
 	if wal.discard {
 		return 0
@@ -76,8 +81,15 @@ func (wal *WAL) replay(writer io.Writer) {
 	if wal.discard {
 		return
 	}
+	if wal.replaying {
+		return
+	}
 	wal.replayLock.Lock()
-	defer wal.replayLock.Unlock()
+	wal.replaying = true
+	defer func() {
+		wal.replaying = false
+		wal.replayLock.Unlock()
+	}()
 
 	wal.logLock.Lock()
 	readedOffset := wal.meta.readedOffset
@@ -94,7 +106,7 @@ func (wal *WAL) replay(writer io.Writer) {
 		b := make([]byte, 4096)
 		for readedOffset < fileSize {
 			n, err := f.Read(b)
-			if 0 == n {
+			if n <= 0 {
 				break
 			}
 			if len(replayBuf) > 0 {
@@ -114,19 +126,22 @@ func (wal *WAL) replay(writer io.Writer) {
 				wal.meta.readedOffset += int64(cursor)
 				readedOffset += int64(cursor)
 			}
-
 		}
 		f.Close()
 		wal.logLock.Lock()
+		defer wal.logLock.Unlock()
 		if wal.meta.readedOffset == wal.meta.fileSize {
-			wal.meta.readedOffset = 0
-			wal.meta.fileSize = 0
-			wal.log.Truncate(WALMetaSize)
-			wal.log.Seek(0, os.SEEK_END)
-			glog.Infof("Clear wal for virtual node:%d", wal.nodeId)
+			err = wal.log.Truncate(WALMetaSize)
+			if err == nil {
+				wal.meta.readedOffset = 0
+				wal.meta.fileSize = 0
+				wal.log.Seek(0, os.SEEK_END)
+				glog.Infof("Clear wal for virtual node:%d", wal.nodeId)
+			} else {
+				glog.Errorf("Failed to truncate wal:%d for reason:%v", wal.nodeId, err)
+			}
 		}
 		wal.syncMeta()
-		wal.logLock.Unlock()
 	}
 }
 
@@ -142,7 +157,10 @@ func newWAL(nodeId int32) (*WAL, error) {
 	}
 	fstat, _ := wal.log.Stat()
 	if fstat.Size() < WALMetaSize {
-		wal.log.Truncate(WALMetaSize)
+		err = wal.log.Truncate(WALMetaSize)
+		if nil != err {
+			return wal, err
+		}
 	}
 	wal.log.Seek(0, os.SEEK_SET)
 	wal.mapedMeta, err = mmap.MapRegion(wal.log, int(WALMetaSize), mmap.RDWR, 0, 0)
@@ -151,6 +169,13 @@ func newWAL(nodeId int32) (*WAL, error) {
 		return nil, err
 	}
 	wal.readMeta()
+	if wal.empty() {
+		err = wal.log.Truncate(WALMetaSize)
+		if nil != err {
+			wal.log.Close()
+			return wal, err
+		}
+	}
 	wal.log.Seek(0, os.SEEK_END)
 	return wal, nil
 }

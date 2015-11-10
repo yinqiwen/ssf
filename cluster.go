@@ -73,6 +73,9 @@ func getNodeById(id int32) *Node {
 func isSelfNode(node *Node) bool {
 	return node.PartitionId == topo.selfParitionId
 }
+func getClusterNodeSize() int {
+	return len(topo.allNodes)
+}
 
 type ServerData struct {
 	Listen string
