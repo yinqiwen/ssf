@@ -91,58 +91,68 @@ func (wal *WAL) replay(writer io.Writer) {
 		wal.replayLock.Unlock()
 	}()
 
-	wal.logLock.Lock()
-	readedOffset := wal.meta.readedOffset
-	fileSize := wal.meta.fileSize
-	wal.logLock.Unlock()
-
-	if readedOffset < fileSize {
-		f, err := os.Open(wal.logPath)
-		if nil != err {
-			return
+	haveDataReplay := true
+	for haveDataReplay {
+		wal.logLock.Lock()
+		if wal.meta.readedOffset == wal.meta.fileSize {
+			haveDataReplay = false
 		}
-		f.Seek(WALMetaSize+wal.meta.readedOffset, 0)
-		replayBuf := make([]byte, 0)
-		b := make([]byte, 4096)
-		for readedOffset < fileSize {
-			n, err := f.Read(b)
-			if n <= 0 {
-				break
+		readedOffset := wal.meta.readedOffset
+		fileSize := wal.meta.fileSize
+		wal.logLock.Unlock()
+		glog.Infof("Start replay wal for virtual node:%d with data size [%d:%d]", wal.nodeId, readedOffset, fileSize)
+		if readedOffset < fileSize {
+			f, err := os.Open(wal.logPath)
+			if nil != err {
+				return
 			}
-			if len(replayBuf) > 0 {
-				replayBuf = append(replayBuf, b[0:n]...)
-			} else {
-				replayBuf = b[0:n]
-			}
-			cursor := consumeEvents(replayBuf)
-			if cursor > 0 {
-				wbuf := make([]byte, cursor)
-				copy(wbuf, replayBuf[0:cursor])
-				replayBuf = replayBuf[cursor:]
-				_, err = writer.Write(wbuf)
-				if nil != err {
+			f.Seek(WALMetaSize+wal.meta.readedOffset, 0)
+			replayBuf := make([]byte, 0)
+			b := make([]byte, 8192)
+			for readedOffset < fileSize {
+				n, err := f.Read(b)
+				if n <= 0 {
 					break
 				}
-				wal.meta.readedOffset += int64(cursor)
-				readedOffset += int64(cursor)
+				replayBuf = append(replayBuf, b[0:n]...)
+				cursor := consumeEvents(replayBuf)
+				if cursor > 0 {
+					wbuf := make([]byte, cursor)
+					copy(wbuf, replayBuf[0:cursor])
+					replayBuf = replayBuf[cursor:]
+					_, err = writer.Write(wbuf)
+					if nil != err {
+						glog.Warningf("Write replay log to node:%d failed:%v", wal.nodeId, err)
+						haveDataReplay = false
+						break
+					}
+					wal.meta.readedOffset += int64(cursor)
+					readedOffset += int64(cursor)
+				} else {
+					if readedOffset == wal.meta.readedOffset {
+						glog.Errorf("No event consumed in this replay for wal:%d", wal.nodeId)
+					}
+				}
 			}
-		}
-		f.Close()
-		wal.logLock.Lock()
-		defer wal.logLock.Unlock()
-		if wal.meta.readedOffset == wal.meta.fileSize {
-			err = wal.log.Truncate(WALMetaSize)
-			if err == nil {
-				wal.meta.readedOffset = 0
-				wal.meta.fileSize = 0
-				wal.log.Seek(0, os.SEEK_END)
-				glog.Infof("Clear wal for virtual node:%d", wal.nodeId)
-			} else {
-				glog.Errorf("Failed to truncate wal:%d for reason:%v", wal.nodeId, err)
+			f.Close()
+			glog.Infof("Stop replay wal for virtual node:%d with current data size [%d:%d]", wal.nodeId, wal.meta.readedOffset, wal.meta.fileSize)
+			wal.logLock.Lock()
+			if wal.meta.readedOffset == wal.meta.fileSize {
+				err = wal.log.Truncate(WALMetaSize)
+				if err == nil {
+					wal.meta.readedOffset = 0
+					wal.meta.fileSize = 0
+					wal.log.Seek(0, os.SEEK_END)
+					glog.Infof("Clear wal for virtual node:%d", wal.nodeId)
+				} else {
+					glog.Errorf("Failed to truncate wal:%d for reason:%v", wal.nodeId, err)
+				}
 			}
+			wal.syncMeta()
+			wal.logLock.Unlock()
 		}
-		wal.syncMeta()
 	}
+
 }
 
 func newWAL(nodeId int32) (*WAL, error) {
