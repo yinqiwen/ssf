@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+
 	"github.com/gogo/protobuf/proto"
 	//"github.com/golang/glog"
 	"io"
@@ -74,6 +75,7 @@ func GetEventByType(eventType int32) proto.Message {
 	if !ok {
 		return nil
 	}
+
 	return reflect.New(oldType).Interface().(proto.Message)
 }
 
@@ -155,6 +157,14 @@ func readEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
 	ev.MsgType = header.GetMsgType()
 	ev.Sequence = header.GetSequenceId()
 	return ev, nil
+}
+
+func WriteEvent(msg proto.Message, hashCode uint64, writer io.Writer) error {
+	var event Event
+	event.HashCode = hashCode
+	event.MsgType = int32(GetEventType(msg))
+	event.Msg = msg
+	return writeEvent(&event, writer)
 }
 
 func writeEvent(ev *Event, writer io.Writer) error {

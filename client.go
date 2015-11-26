@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/gogo/protobuf/proto"
-	"github.com/golang/glog"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/glog"
 )
 
 var ssfClient clusterClient
@@ -19,15 +20,10 @@ type NodeIOEvent struct {
 }
 
 func newNodeEvent(msg proto.Message, hashCode uint64) *NodeIOEvent {
-	var event Event
-	event.HashCode = hashCode
-	event.MsgType = int32(GetEventType(msg))
-	event.Msg = msg
 	var buf bytes.Buffer
-	writeEvent(&event, &buf)
+	WriteEvent(msg, hashCode, &buf)
 	ev := new(NodeIOEvent)
 	ev.event = buf.Bytes()
-
 	return ev
 }
 
@@ -300,7 +296,7 @@ func (c *clusterClient) replayWals() {
 
 func (c *clusterClient) printWalSizes() {
 	for _, wal := range c.nodeWals {
-		if nil != wal {
+		if nil != wal && wal.cachedDataSize() > 0 {
 			glog.Infof("WAL[%d] Cached Data Size:%d", wal.nodeId, wal.cachedDataSize())
 		}
 	}

@@ -2,7 +2,7 @@ package ssf
 
 import (
 	// "encoding/json"
-	// "github.com/samuel/go-zookeeper/zk"
+	"github.com/samuel/go-zookeeper/zk"
 	// "time"
 	"crypto/md5"
 	"encoding/binary"
@@ -81,8 +81,13 @@ type ServerData struct {
 	Listen string
 }
 
-func retriveNodes() {
-
+func retriveNodes(conn *zk.Conn) {
+	data, st, ch, err := conn.GetW(path)
+	if nil != err {
+		glog.Errorf("Failed to retrive nodes from zk:%v", err)
+	}
+	ech := <-ch
+	go retriveNodes(conn)
 }
 
 func startZkAgent() {

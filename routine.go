@@ -1,17 +1,13 @@
 package ssf
 
-import (
-	"github.com/golang/glog"
-	"os"
-	"time"
-)
+import "time"
 
-func checkPpid() {
-	if os.Getppid() == 1 {
-		glog.Errorf("Exit current process since parent exited.")
-		os.Exit(1)
-	}
-}
+// func checkPpid() {
+// 	if os.Getppid() == 1 {
+// 		glog.Errorf("Exit current process since parent exited.")
+// 		os.Exit(1)
+// 	}
+// }
 
 func initRoutine() {
 	hbTickChan := time.NewTicker(time.Millisecond * 1000).C
@@ -24,7 +20,6 @@ func initRoutine() {
 				ssfClient.checkPartitionConns()
 				ssfClient.heartbeat()
 			case <-checkTickChan:
-				checkPpid()
 				ssfClient.checkHeartbeatTimeout()
 				ssfClient.replayWals()
 			case <-logTickChan:
