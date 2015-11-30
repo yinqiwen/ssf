@@ -248,6 +248,7 @@ func (c *clusterClient) emit(msg proto.Message, hashCode uint64) {
 		glog.Errorf("Failed to retrive connection or wal to emit event for reason:%v", err)
 		return
 	}
+
 	ev.wal = wal
 	if nil != conn {
 		conn.write(ev)

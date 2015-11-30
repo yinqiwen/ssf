@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-
-	"github.com/gogo/protobuf/proto"
-	//"github.com/golang/glog"
 	"io"
 	"reflect"
 	"sync"
+
+	"github.com/gogo/protobuf/proto"
 )
 
 var MAGIC_EVENT_HEADER []byte = []byte("SSFE")
@@ -44,16 +43,18 @@ func (m *RawMessage) Data() []byte {
 	return m.raw
 }
 
+//NewRawMessage create a []byte proto message
 func NewRawMessage(str string) *RawMessage {
 	msg := new(RawMessage)
 	msg.raw = []byte(str)
 	return msg
 }
 
-var int2Reflect map[int32]reflect.Type = make(map[int32]reflect.Type)
-var reflect2Int map[reflect.Type]int32 = make(map[reflect.Type]int32)
+var int2Reflect = make(map[int32]reflect.Type)
+var reflect2Int = make(map[reflect.Type]int32)
 var lk sync.Mutex // guards maps
 
+//RegisterEvent register message with int type
 func RegisterEvent(eventType int32, ev proto.Message) {
 	t := reflect.TypeOf(ev).Elem()
 	lk.Lock()
@@ -79,6 +80,8 @@ func GetEventByType(eventType int32) proto.Message {
 	return reflect.New(oldType).Interface().(proto.Message)
 }
 
+//GetEventType return the registed int type of proto message
+// return -1 if no such message registed
 func GetEventType(ev proto.Message) int32 {
 	lk.Lock()
 	defer lk.Unlock()
@@ -159,6 +162,7 @@ func readEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
 	return ev, nil
 }
 
+//WriteEvent encode&write message to writer
 func WriteEvent(msg proto.Message, hashCode uint64, writer io.Writer) error {
 	var event Event
 	event.HashCode = hashCode
