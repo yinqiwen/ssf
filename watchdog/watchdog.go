@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/samuel/go-zookeeper/zk"
-	"stathat.com/c/consistent"
+	"github.com/yinqiwen/ssf"
 )
 
-var consistentHash = consistent.New()
+var chash *ssf.Consistent
 
 //var watchEventCh = make()
 
@@ -38,6 +38,6 @@ func main() {
 		return
 	}
 	defer lock.Unlock()
-	consistentHash.NumberOfReplicas = 1
+	//consistentHash.
 
 }

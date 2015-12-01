@@ -24,6 +24,7 @@ var zkConn *zk.Conn
 type ServerData struct {
 	Addr   string
 	Weight uint32
+	ConnectedTime int64
 }
 
 type agentEvent struct {
@@ -88,6 +89,7 @@ func buildNodeTopoFromZk(nodes []Node, partitions []Partition) {
 	for _, partition := range partitions {
 		if partition.Addr == localHostNamePort {
 			newTopo.selfParitionID = partition.Id
+			break
 		}
 	}
 	for _, node := range nodes {

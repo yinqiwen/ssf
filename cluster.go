@@ -11,29 +11,6 @@ import (
 	"github.com/golang/glog"
 )
 
-const (
-	NODE_ACTIVE  uint8 = 1
-	NODE_LOADING uint8 = 2
-	NODE_FAULT   uint8 = 3
-)
-
-type Node struct {
-	Id          int32
-	PartitionID int32
-	Addr        string
-	Status      uint8
-}
-
-func (node *Node) isActive() bool {
-	return node.Status == NODE_ACTIVE
-}
-
-type Partition struct {
-	Id   int32
-	Addr string
-	//Nodes []int32
-}
-
 type EventProcessor interface {
 	OnStart() error
 	OnEvent(ev *Event) error
