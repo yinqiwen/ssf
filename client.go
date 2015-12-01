@@ -260,8 +260,12 @@ func (c *clusterClient) emit(msg proto.Message, hashCode uint64) {
 }
 
 func (c *clusterClient) checkPartitionConns() {
-	for _, part := range topo.partitions {
-		c.getNodeConn(getNodeById(part.Nodes[0]))
+	var checkedAddr = make(map[string]bool)
+	for _, node := range getClusterTopo().allNodes {
+		if _, ok := checkedAddr[node.Addr]; !ok {
+			c.getNodeConn(getNodeById(node.Id))
+			checkedAddr[node.Addr] = true
+		}
 	}
 }
 

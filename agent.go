@@ -36,13 +36,13 @@ var localHostName string
 var localHostNamePort string
 
 func watchNodes() {
-	path := ssfCfg.ClusterName + "/topo/nodes"
-	data, st, ch, err := zkConn.GetW(path)
+	path := "/" + ssfCfg.ClusterName + "/topo/nodes"
+	data, _, ch, err := zkConn.GetW(path)
 	if nil != err {
 		glog.Errorf("Failed to retrive nodes from zk:%v", err)
 		time.Sleep(1 * time.Second)
 	} else {
-		agentEventChannel <- &agentEvent{nil, string(data)}
+		agentEventChannel <- &agentEvent{"", string(data)}
 		zev := <-ch
 		glog.Infof("Receive zk event:%v", zev)
 	}
@@ -50,13 +50,13 @@ func watchNodes() {
 }
 
 func watchPartitions() {
-	path := ssfCfg.ClusterName + "/topo/partitions"
-	data, st, ch, err := zkConn.GetW(path)
+	path := "/" + ssfCfg.ClusterName + "/topo/partitions"
+	data, _, ch, err := zkConn.GetW(path)
 	if nil != err {
 		glog.Errorf("Failed to retrive partitions from zk:%v", err)
 		time.Sleep(1 * time.Second)
 	} else {
-		agentEventChannel <- &agentEvent{string(data), nil}
+		agentEventChannel <- &agentEvent{string(data), ""}
 		zev := <-ch
 		glog.Infof("Receive zk event:%v", zev)
 	}
@@ -69,7 +69,7 @@ func updateClusterParitions(data string) {
 	if nil != err {
 		glog.Errorf("Invalid partition json:%s with err:%v", data, err)
 	} else {
-		buildNodeTopoFromZk(topo.allNodes, partitions)
+		buildNodeTopoFromZk(getClusterTopo().allNodes, partitions)
 	}
 }
 
@@ -79,7 +79,7 @@ func updateClusterNodes(data string) {
 	if nil != err {
 		glog.Errorf("Invalid nodes json:%s with err:%v", data, err)
 	} else {
-		buildNodeTopoFromZk(nodes, topo.partitions)
+		buildNodeTopoFromZk(nodes, getClusterTopo().partitions)
 	}
 }
 
@@ -110,7 +110,7 @@ func shortHostname() (string, error) {
 		}
 		return hostname, nil
 	}
-	return nil, err
+	return "", err
 }
 
 func createZookeeperPath() error {
@@ -127,10 +127,10 @@ func createZookeeperPath() error {
 	}
 	localHostNamePort = net.JoinHostPort(localHostName, port)
 	data.Addr = localHostNamePort
-	serverPath := ssfCfg.ClusterName + "/servers/" + data.Addr
+	serverPath := "/" + ssfCfg.ClusterName + "/servers/" + data.Addr
 	zkData, _ := json.Marshal(&data)
 	for !zkPathCreated {
-		_, err := zkConn.CreateProtectedEphemeralSequential(severPath, zkData, nil)
+		_, err := zkConn.CreateProtectedEphemeralSequential(serverPath, zkData, nil)
 		if nil != err {
 			glog.Errorf("Failed to create zookeeper path:%s with reason:%v", serverPath, err)
 			time.Sleep(1 * time.Second)
@@ -138,6 +138,7 @@ func createZookeeperPath() error {
 			zkPathCreated = true
 		}
 	}
+	return nil
 }
 
 func agentLoop() {

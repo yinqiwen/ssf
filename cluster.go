@@ -61,10 +61,10 @@ var ssfCfg ClusterConfig
 var ssfTopo unsafe.Pointer
 
 func getClusterTopo() *clusterTopo {
-	return atomic.LoadPointer(&ssfTopo)
+	return (*clusterTopo)(atomic.LoadPointer(&ssfTopo))
 }
 func saveClusterTopo(topo *clusterTopo) {
-	atomic.StorePointer(&ssfTopo, topo)
+	atomic.StorePointer(&ssfTopo, unsafe.Pointer(topo))
 }
 
 func getNodeByHash(hashCode uint64) *Node {
@@ -103,7 +103,7 @@ func buildNodeTopoFromConfig() {
 		}
 	}
 	virtualNodePerPartion := virtualNodeSize / len(ssfCfg.SSFServers)
-	topo := getClusterTopo()
+	topo := new(clusterTopo)
 	topo.allNodes = make([]Node, virtualNodeSize)
 	topo.partitions = make([]Partition, len(ssfCfg.SSFServers))
 	k := 0
@@ -143,6 +143,7 @@ func buildNodeTopoFromConfig() {
 		}
 		topo.partitions[i] = partition
 	}
+	saveClusterTopo(topo)
 }
 
 //HashCode return the md5 hashcode of raw bytes
