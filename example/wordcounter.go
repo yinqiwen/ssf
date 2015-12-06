@@ -1,17 +1,16 @@
 package main
 
 import (
-	//"fmt"
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/golang/glog"
-	"github.com/yinqiwen/ssf"
 	"net"
 	"os"
 	"os/signal"
 	"strings"
-	//"time"
+
+	"github.com/golang/glog"
+	"github.com/yinqiwen/ssf"
 )
 
 const WORD_COUNT_EVENT = 100

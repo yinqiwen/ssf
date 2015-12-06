@@ -22,8 +22,8 @@ var zkConn *zk.Conn
 
 //Zookeeper path data
 type ServerData struct {
-	Addr   string
-	Weight uint32
+	Addr          string
+	Weight        uint32
 	ConnectedTime int64
 }
 
@@ -66,7 +66,7 @@ func watchPartitions() {
 
 func updateClusterParitions(data string) {
 	var partitions []Partition
-	err := json.Unmarshal([]byte(data), partitions)
+	err := json.Unmarshal([]byte(data), &partitions)
 	if nil != err {
 		glog.Errorf("Invalid partition json:%s with err:%v", data, err)
 	} else {
@@ -76,7 +76,7 @@ func updateClusterParitions(data string) {
 
 func updateClusterNodes(data string) {
 	var nodes []Node
-	err := json.Unmarshal([]byte(data), nodes)
+	err := json.Unmarshal([]byte(data), &nodes)
 	if nil != err {
 		glog.Errorf("Invalid nodes json:%s with err:%v", data, err)
 	} else {
@@ -129,6 +129,7 @@ func createZookeeperPath() error {
 	}
 	localHostNamePort = net.JoinHostPort(localHostName, port)
 	data.Addr = localHostNamePort
+	data.ConnectedTime = time.Now().Unix()
 	serverPath := "/" + ssfCfg.ClusterName + "/servers/" + data.Addr
 	zkData, _ := json.Marshal(&data)
 	for !zkPathCreated {

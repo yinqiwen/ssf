@@ -22,7 +22,7 @@ func (node *Node) isActive() bool {
 type Partition struct {
 	Id    int32
 	Addr  string
-	nodes []int32
+	Nodes []int32
 }
 
 //Consistent manager virutal nodes by consistent hash algorithm
@@ -36,6 +36,19 @@ func NewConsistent(numberOfVirtualNode int) *Consistent {
 	c := new(Consistent)
 	c.NumberOfVirtualNode = numberOfVirtualNode
 	c.partitions = make(map[string]*Partition)
+	return c
+}
+
+func NewConsistentCopy(other *Consistent) *Consistent {
+	c := new(Consistent)
+	c.NumberOfVirtualNode = other.NumberOfVirtualNode
+	c.partitions = make(map[string]*Partition)
+	c.partitionIDSeed = other.partitionIDSeed
+	for _, part := range other.partitions {
+		parition := new(Partition)
+		*parition = *part
+		c.partitions[part.Addr] = parition
+	}
 	return c
 }
 
@@ -58,20 +71,20 @@ func (c *Consistent) update() {
 	sort.Sort(partitionArray(allPartitions))
 
 	for _, partition := range allPartitions {
-		if len(partition.nodes) == 0 {
+		if len(partition.Nodes) == 0 {
 			continue
 		}
 		maxVirtualNodePerPart := numberOfVirtualNodePerPart
 		if remainder > 0 {
 			maxVirtualNodePerPart++
 		}
-		if len(partition.nodes) > maxVirtualNodePerPart {
-			partition.nodes = partition.nodes[0:maxVirtualNodePerPart]
+		if len(partition.Nodes) > maxVirtualNodePerPart {
+			partition.Nodes = partition.Nodes[0:maxVirtualNodePerPart]
 		}
-		if len(partition.nodes) > numberOfVirtualNodePerPart {
+		if len(partition.Nodes) > numberOfVirtualNodePerPart {
 			remainder--
 		}
-		for _, id := range partition.nodes {
+		for _, id := range partition.Nodes {
 			assignedNodes[id] = true
 		}
 	}
@@ -91,13 +104,13 @@ func (c *Consistent) update() {
 		if remainder > 0 {
 			maxVirtualNodePerPart++
 		}
-		if len(partition.nodes) < maxVirtualNodePerPart {
-			for len(partition.nodes) < maxVirtualNodePerPart && len(unassingedNodes) > 0 {
-				partition.nodes = append(partition.nodes, unassingedNodes[0])
+		if len(partition.Nodes) < maxVirtualNodePerPart {
+			for len(partition.Nodes) < maxVirtualNodePerPart && len(unassingedNodes) > 0 {
+				partition.Nodes = append(partition.Nodes, unassingedNodes[0])
 				unassingedNodes = unassingedNodes[1:]
 			}
 		}
-		if len(partition.nodes) > numberOfVirtualNodePerPart {
+		if len(partition.Nodes) > numberOfVirtualNodePerPart {
 			remainder--
 		}
 	}
@@ -107,7 +120,7 @@ func (c *Consistent) Add(server string) {
 	if _, ok := c.partitions[server]; ok {
 		return
 	}
-	part := &Partition{c.partitionIdSeed, server, nil}
+	part := &Partition{c.partitionIDSeed, server, nil}
 	c.partitionIDSeed++
 	c.partitions[server] = part
 	c.update()
@@ -123,7 +136,7 @@ func (c *Consistent) Remove(server string) {
 
 func (c *Consistent) Get(server string) []int32 {
 	if part, ok := c.partitions[server]; ok {
-		return part.nodes
+		return part.Nodes
 	}
 	return nil
 }

@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/edsrzf/mmap-go"
-	"github.com/golang/glog"
 	"io"
 	"os"
 	"sync"
+
+	"github.com/edsrzf/mmap-go"
+	"github.com/golang/glog"
 )
 
 const WALMetaSize int64 = 4096
