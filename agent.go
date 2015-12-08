@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -92,27 +91,20 @@ func buildNodeTopoFromZk(nodes []Node, partitions []Partition) {
 			break
 		}
 	}
-	for _, node := range nodes {
+	for i := 0; i < len(nodes); i++ {
 		for _, partition := range partitions {
-			if node.PartitionID == partition.Id {
-				node.Addr = partition.Addr
+			if nodes[i].PartitionID == partition.Id {
+				nodes[i].Addr = partition.Addr
+				break
 			}
 		}
 	}
 	newTopo.allNodes = nodes
 	newTopo.partitions = partitions
+	glog.Infof("Update route table from zookeeper with self ParitionID:%d", newTopo.selfParitionID)
+	glog.Infof("Current cluster partitions is %v.", newTopo.partitions)
+	glog.Infof("Current cluster nodes is %v.", newTopo.allNodes)
 	saveClusterTopo(newTopo)
-}
-
-func shortHostname() (string, error) {
-	hostname, err := os.Hostname()
-	if err == nil {
-		if i := strings.Index(hostname, "."); i >= 0 {
-			hostname = hostname[:i]
-		}
-		return hostname, nil
-	}
-	return "", err
 }
 
 func createZookeeperPath() error {
@@ -123,7 +115,7 @@ func createZookeeperPath() error {
 	if nil != err {
 		return err
 	}
-	localHostName, err = shortHostname()
+	localHostName, err = os.Hostname()
 	if nil != err {
 		return err
 	}
@@ -131,9 +123,11 @@ func createZookeeperPath() error {
 	data.Addr = localHostNamePort
 	data.ConnectedTime = time.Now().Unix()
 	serverPath := "/" + ssfCfg.ClusterName + "/servers/" + data.Addr
+	zkConn.Create("/"+ssfCfg.ClusterName, nil, 0, zk.WorldACL(zk.PermAll))
+	zkConn.Create("/"+ssfCfg.ClusterName+"/servers/", nil, 0, zk.WorldACL(zk.PermAll))
 	zkData, _ := json.Marshal(&data)
 	for !zkPathCreated {
-		_, err := zkConn.CreateProtectedEphemeralSequential(serverPath, zkData, nil)
+		_, err := zkConn.Create(serverPath, zkData, zk.FlagEphemeral, zk.WorldACL(zk.PermAll))
 		if nil != err {
 			glog.Errorf("Failed to create zookeeper path:%s with reason:%v", serverPath, err)
 			time.Sleep(1 * time.Second)
@@ -170,6 +164,7 @@ func startZkAgent() error {
 	if err != nil {
 		return err
 	}
+	saveClusterTopo(new(clusterTopo)) //set empty default topo
 	go agentLoop()
 	return nil
 }

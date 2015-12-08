@@ -12,6 +12,7 @@ import (
 	"github.com/yinqiwen/ssf"
 )
 
+var zkAcls []zk.ACL
 var zconn *zk.Conn
 var consitent *ssf.Consistent
 var rootZkPath string
@@ -24,8 +25,11 @@ var connectedServers []ssf.ServerData
 func currentConnectedServes() []string {
 	var ss []string
 	for _, server := range connectedServers {
-		if time.Now().Unix()-server.ConnectedTime >= 60 {
+		secs := time.Now().Unix() - server.ConnectedTime
+		if secs >= 30 { //only accept server already connected 30s ago
 			ss = append(ss, server.Addr)
+		} else {
+			glog.Infof("Server:%s is connected %ds ago.", server.Addr, secs)
 		}
 	}
 	return ss
@@ -91,6 +95,7 @@ func watchChildren() {
 }
 
 func watchdogProcess() {
+	go watchChildren()
 	//1. Build initial cluster topo
 	var partitions []ssf.Partition
 	var nodes []ssf.Node
@@ -115,6 +120,8 @@ func watchdogProcess() {
 			break
 		}
 	}
+	glog.Infof("Retrive old partitions:%v", partitions)
+	glog.Infof("Retrive old nodes:%v", nodes)
 	for _, node := range nodes {
 		for i := 0; i < len(partitions); i++ {
 			if node.PartitionID == partitions[i].Id {
@@ -157,9 +164,9 @@ func watchdogProcess() {
 				}
 				partitionData, _ := json.Marshal(topoPartitions)
 				nodeData, _ := json.Marshal(topoNodes)
-				_, err := zconn.Set(topoPartitionsPath, partitionData, 0)
+				_, err := zconn.Set(topoPartitionsPath, partitionData, -1)
 				if nil == err {
-					_, err = zconn.Set(topoNodesPath, nodeData, 0)
+					_, err = zconn.Set(topoNodesPath, nodeData, -1)
 				}
 				if nil != err {
 					glog.Errorf("Failed to update topo with reason:%v", err)
@@ -180,6 +187,8 @@ func main() {
 	flag.Parse()
 	defer glog.Flush()
 
+	zkAcls = zk.WorldACL(zk.PermAll)
+
 	zkServers := strings.Split(*zks, ",")
 	c, _, err := zk.Connect(zkServers, time.Second*10)
 	if nil != err {
@@ -190,19 +199,19 @@ func main() {
 	serversZkPath = rootZkPath + "/servers"
 	topoNodesPath = rootZkPath + "/topo/nodes"
 	topoPartitionsPath = rootZkPath + "/topo/partitions"
-	c.Create(rootZkPath, nil, 0, nil)
+	c.Create(rootZkPath, nil, 0, zkAcls)
 
-	lock := zk.NewLock(c, rootZkPath, nil)
+	lock := zk.NewLock(c, rootZkPath+"/lock", zkAcls)
 	err = lock.Lock()
 	if nil != err {
 		glog.Errorf("Lock failed with reason:%v", err)
 		return
 	}
 	defer lock.Unlock()
-	c.Create(serversZkPath, nil, 0, nil)
-	c.Create(rootZkPath+"/topo", nil, 0, nil)
-	c.Create(topoNodesPath, nil, 0, nil)
-	c.Create(topoPartitionsPath, nil, 0, nil)
+	c.Create(serversZkPath, nil, 0, zkAcls)
+	c.Create(rootZkPath+"/topo", nil, 0, zkAcls)
+	c.Create(topoNodesPath, nil, 0, zkAcls)
+	c.Create(topoPartitionsPath, nil, 0, zkAcls)
 	zconn = c
 	consitent = ssf.NewConsistent(int(*numOfNodes))
 	watchdogProcess()

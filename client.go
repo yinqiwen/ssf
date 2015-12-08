@@ -3,6 +3,7 @@ package ssf
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -13,6 +14,8 @@ import (
 )
 
 var ssfClient clusterClient
+
+var errNoNode = errors.New("No cluster node to emit msg")
 
 type NodeIOEvent struct {
 	wal   *WAL
@@ -229,10 +232,10 @@ func (c *clusterClient) getNodeConn(node *Node) (*rawTcpConn, *WAL, error) {
 	return conn, wal, nil
 }
 
-func (c *clusterClient) emit(msg proto.Message, hashCode uint64) {
+func (c *clusterClient) emit(msg proto.Message, hashCode uint64) error {
 	node := getNodeByHash(hashCode)
 	if nil == node {
-		return
+		return errNoNode
 	}
 	if isSelfNode(node) {
 		var event Event
@@ -240,23 +243,24 @@ func (c *clusterClient) emit(msg proto.Message, hashCode uint64) {
 		event.Msg = msg
 		event.MsgType = GetEventType(msg)
 		ssfCfg.Handler.OnEvent(&event)
-		return
+		return nil
 	}
 	ev := newNodeEvent(msg, hashCode)
 	conn, wal, err := c.getNodeConn(node)
 	if nil != err {
 		glog.Errorf("Failed to retrive connection or wal to emit event for reason:%v", err)
-		return
+		return err
 	}
 
 	ev.wal = wal
 	if nil != conn {
 		conn.write(ev)
-		return
+
 	}
 	if nil != wal {
 		ev.wal.Write(ev.event)
 	}
+	return nil
 }
 
 func (c *clusterClient) checkPartitionConns() {

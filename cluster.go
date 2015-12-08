@@ -46,8 +46,11 @@ func saveClusterTopo(topo *clusterTopo) {
 
 func getNodeByHash(hashCode uint64) *Node {
 	topo := getClusterTopo()
+	if len(topo.allNodes) == 0 {
+		return nil
+	}
 	cursor := hashCode & uint64(len(topo.allNodes)-1)
-	return &(getClusterTopo().allNodes[int(cursor)])
+	return &(topo.allNodes[int(cursor)])
 }
 func getNodeById(id int32) *Node {
 	topo := getClusterTopo()

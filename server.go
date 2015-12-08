@@ -3,10 +3,11 @@ package ssf
 import (
 	"bufio"
 	"bytes"
-	"github.com/golang/glog"
-	"github.com/yinqiwen/gotoolkit/ots"
 	"io"
 	"net"
+
+	"github.com/golang/glog"
+	"github.com/yinqiwen/gotoolkit/ots"
 )
 
 const (

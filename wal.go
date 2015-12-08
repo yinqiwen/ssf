@@ -132,6 +132,8 @@ func (wal *WAL) replay(writer io.Writer) {
 				} else {
 					if readedOffset == wal.meta.readedOffset {
 						glog.Errorf("No event consumed in this replay for wal:%d", wal.nodeId)
+					} else {
+						glog.Warningf("No one complete event found in buffer with %d bytes", len(replayBuf))
 					}
 				}
 			}

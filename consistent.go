@@ -59,6 +59,9 @@ func (a partitionArray) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a partitionArray) Less(i, j int) bool { return a[i].Id < a[j].Id }
 
 func (c *Consistent) update() {
+	if len(c.partitions) == 0 {
+		return
+	}
 	assignedNodes := make(map[int32]bool)
 	numberOfVirtualNodePerPart := c.NumberOfVirtualNode / len(c.partitions)
 	remainder := c.NumberOfVirtualNode % len(c.partitions)
