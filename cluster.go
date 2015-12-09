@@ -96,7 +96,6 @@ func buildNodeTopoFromConfig() {
 		var partition Partition
 		partition.Addr = server
 		partition.Id = int32(i)
-		//partition.Nodes = make([]int32, 0)
 		if server == ssfCfg.ListenAddr || server == localAddr {
 			topo.selfParitionID = partition.Id
 		}

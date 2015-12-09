@@ -37,7 +37,7 @@ func newEmptyNodeEvent() *NodeIOEvent {
 }
 
 // nodeConn wraps a connection, usually a persistent one
-type rawTcpConn struct {
+type rawTCPConn struct {
 	addr       string
 	conn       net.Conn
 	writech    chan *NodeIOEvent
@@ -46,14 +46,14 @@ type rawTcpConn struct {
 	hbPongTime int64 //the time recv heatbeat pong
 }
 
-func (nc *rawTcpConn) close() {
+func (nc *rawTCPConn) close() {
 	if !nc.closed {
 		nc.closed = true
 		nc.closech <- 1
 	}
 }
 
-func (nc *rawTcpConn) logUnsentEvents() {
+func (nc *rawTCPConn) logUnsentEvents() {
 	for {
 		select {
 		case ev := <-nc.writech:
@@ -64,7 +64,7 @@ func (nc *rawTcpConn) logUnsentEvents() {
 	}
 }
 
-func (nc *rawTcpConn) evloop() {
+func (nc *rawTCPConn) evloop() {
 	for {
 		select {
 		case ev := <-nc.writech:
@@ -83,7 +83,11 @@ func (nc *rawTcpConn) evloop() {
 					ev.wal.Write(ev.event)
 				}
 				if nil != nc.conn && !nc.closed && !ev.wal.empty() {
-					go ev.wal.replay(nc)
+					//go ev.wal.replay(nc)
+					err := ev.wal.replay(nc.conn)
+					if nil != err {
+						nc.close()
+					}
 				}
 			}
 		case _ = <-nc.closech:
@@ -98,7 +102,7 @@ func (nc *rawTcpConn) evloop() {
 	}
 }
 
-func (nc *rawTcpConn) readloop() {
+func (nc *rawTCPConn) readloop() {
 	var bc *bufio.Reader
 	reconnectAfter := 1 * time.Second
 	for !nc.closed {
@@ -122,12 +126,10 @@ func (nc *rawTcpConn) readloop() {
 		if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {
 			nc.hbPongTime = time.Now().Unix()
 		}
-		//ssfClient.process()
-		//nc.write(ev)
 	}
 }
 
-func (nc *rawTcpConn) heartbeat() {
+func (nc *rawTCPConn) heartbeat() {
 	if !nc.closed && nc.conn != nil {
 		var hb HeartBeat
 		req := true
@@ -141,7 +143,7 @@ func (nc *rawTcpConn) heartbeat() {
 	}
 }
 
-func (nc *rawTcpConn) write(ev *NodeIOEvent) {
+func (nc *rawTCPConn) write(ev *NodeIOEvent) {
 	if nc.closed {
 		ev.wal.Write(ev.event)
 		return
@@ -155,7 +157,7 @@ func (nc *rawTcpConn) write(ev *NodeIOEvent) {
 	}
 }
 
-func (nc *rawTcpConn) Write(p []byte) (int, error) {
+func (nc *rawTCPConn) Write(p []byte) (int, error) {
 	if nc.closed {
 		return 0, fmt.Errorf("raw connection closed.")
 	}
@@ -168,12 +170,12 @@ func (nc *rawTcpConn) Write(p []byte) (int, error) {
 
 type clusterClient struct {
 	nodeConnMu sync.Mutex
-	allConns   map[string]*rawTcpConn
-	nodeConns  []*rawTcpConn
+	allConns   map[string]*rawTCPConn
+	nodeConns  []*rawTCPConn
 	nodeWals   []*WAL
 }
 
-func (c *clusterClient) eraseConn(conn *rawTcpConn) {
+func (c *clusterClient) eraseConn(conn *rawTCPConn) {
 	c.nodeConnMu.Lock()
 	defer c.nodeConnMu.Unlock()
 	for i, v := range c.nodeConns {
@@ -184,8 +186,8 @@ func (c *clusterClient) eraseConn(conn *rawTcpConn) {
 	delete(c.allConns, conn.addr)
 }
 
-func (c *clusterClient) newNodeConn(node *Node) *rawTcpConn {
-	conn := new(rawTcpConn)
+func (c *clusterClient) newNodeConn(node *Node) *rawTCPConn {
+	conn := new(rawTCPConn)
 	conn.addr = node.Addr
 	conn.writech = make(chan *NodeIOEvent, 100000)
 	conn.closech = make(chan int)
@@ -197,11 +199,11 @@ func (c *clusterClient) newNodeConn(node *Node) *rawTcpConn {
 	return conn
 }
 
-func (c *clusterClient) getNodeConn(node *Node) (*rawTcpConn, *WAL, error) {
+func (c *clusterClient) getNodeConn(node *Node) (*rawTCPConn, *WAL, error) {
 	c.nodeConnMu.Lock()
 	defer c.nodeConnMu.Unlock()
 	if len(c.nodeConns) < int(node.Id+1) {
-		c.nodeConns = append(c.nodeConns, make([]*rawTcpConn, int(node.Id)+1-len(c.nodeConns))...)
+		c.nodeConns = append(c.nodeConns, make([]*rawTCPConn, int(node.Id)+1-len(c.nodeConns))...)
 	}
 	var ok bool
 	conn := c.nodeConns[node.Id]
@@ -237,6 +239,7 @@ func (c *clusterClient) emit(msg proto.Message, hashCode uint64) error {
 	if nil == node {
 		return errNoNode
 	}
+
 	if isSelfNode(node) {
 		var event Event
 		event.HashCode = hashCode
@@ -251,16 +254,32 @@ func (c *clusterClient) emit(msg proto.Message, hashCode uint64) error {
 		glog.Errorf("Failed to retrive connection or wal to emit event for reason:%v", err)
 		return err
 	}
-
 	ev.wal = wal
 	if nil != conn {
 		conn.write(ev)
-
-	}
-	if nil != wal {
+	} else if nil != wal {
 		ev.wal.Write(ev.event)
 	}
 	return nil
+}
+
+func (c *clusterClient) clearInvalidConns() {
+	addrSet := make(map[string]bool)
+	for _, partition := range getClusterTopo().partitions {
+		addrSet[partition.Addr] = true
+	}
+	c.nodeConnMu.Lock()
+	defer c.nodeConnMu.Unlock()
+	for addr, conn := range c.allConns {
+		if _, ok := addrSet[addr]; !ok {
+			conn.close()
+		}
+	}
+	for i, conn := range c.nodeConns {
+		if conn.addr != getNodeById(int32(i)).Addr {
+			c.nodeConns[i] = nil
+		}
+	}
 }
 
 func (c *clusterClient) checkPartitionConns() {
@@ -295,6 +314,7 @@ func (c *clusterClient) replayWals() {
 			}
 			if nil != wal && !wal.empty() {
 				glog.Infof("Try to replay WAL for node:%d with cacehd data size:%d", node.Id, wal.cachedDataSize())
+				wal.sync()
 				ev := newEmptyNodeEvent()
 				ev.wal = wal
 				conn.write(ev)
@@ -324,5 +344,5 @@ func Emit(msg proto.Message, hashCode uint64) {
 }
 
 func init() {
-	ssfClient.allConns = make(map[string]*rawTcpConn)
+	ssfClient.allConns = make(map[string]*rawTCPConn)
 }

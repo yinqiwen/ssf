@@ -164,10 +164,9 @@ func watchdogProcess() {
 				}
 				partitionData, _ := json.Marshal(topoPartitions)
 				nodeData, _ := json.Marshal(topoNodes)
-				_, err := zconn.Set(topoPartitionsPath, partitionData, -1)
-				if nil == err {
-					_, err = zconn.Set(topoNodesPath, nodeData, -1)
-				}
+				setParitions := &zk.SetDataRequest{topoPartitionsPath, partitionData, -1}
+				setNodes := &zk.SetDataRequest{topoNodesPath, nodeData, -1}
+				_, err := zconn.Multi(setParitions, setNodes)
 				if nil != err {
 					glog.Errorf("Failed to update topo with reason:%v", err)
 				} else {

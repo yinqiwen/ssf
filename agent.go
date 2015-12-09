@@ -27,8 +27,8 @@ type ServerData struct {
 }
 
 type agentEvent struct {
-	partitionData string
-	nodeData      string
+	partitionData []byte
+	nodeData      []byte
 }
 
 var agentEventChannel = make(chan *agentEvent)
@@ -36,51 +36,35 @@ var localHostName string
 var localHostNamePort string
 
 func watchNodes() {
-	path := "/" + ssfCfg.ClusterName + "/topo/nodes"
-	data, _, ch, err := zkConn.GetW(path)
-	if nil != err {
-		glog.Errorf("Failed to retrive nodes from zk:%v", err)
+	partitionPath := "/" + ssfCfg.ClusterName + "/topo/partitions"
+	nodePath := "/" + ssfCfg.ClusterName + "/topo/nodes"
+	nodeData, _, ch, err1 := zkConn.GetW(nodePath)
+	partitionData, _, err2 := zkConn.Get(partitionPath)
+	if nil != err1 || nil != err2 {
+		glog.Errorf("Failed to retrive nodes from zk:%v, %v", err1, err2)
 		time.Sleep(1 * time.Second)
 	} else {
-		agentEventChannel <- &agentEvent{"", string(data)}
+		agentEventChannel <- &agentEvent{partitionData, nodeData}
 		zev := <-ch
 		glog.Infof("Receive zk event:%v", zev)
 	}
 	go watchNodes()
 }
 
-func watchPartitions() {
-	path := "/" + ssfCfg.ClusterName + "/topo/partitions"
-	data, _, ch, err := zkConn.GetW(path)
-	if nil != err {
-		glog.Errorf("Failed to retrive partitions from zk:%v", err)
-		time.Sleep(1 * time.Second)
-	} else {
-		agentEventChannel <- &agentEvent{string(data), ""}
-		zev := <-ch
-		glog.Infof("Receive zk event:%v", zev)
-	}
-	go watchPartitions()
-}
-
-func updateClusterParitions(data string) {
-	var partitions []Partition
-	err := json.Unmarshal([]byte(data), &partitions)
-	if nil != err {
-		glog.Errorf("Invalid partition json:%s with err:%v", data, err)
-	} else {
-		buildNodeTopoFromZk(getClusterTopo().allNodes, partitions)
-	}
-}
-
-func updateClusterNodes(data string) {
+func updateClusterTopo(nodeData, partitionData []byte) {
 	var nodes []Node
-	err := json.Unmarshal([]byte(data), &nodes)
+	var partitions []Partition
+	err := json.Unmarshal(nodeData, &nodes)
 	if nil != err {
-		glog.Errorf("Invalid nodes json:%s with err:%v", data, err)
-	} else {
-		buildNodeTopoFromZk(nodes, getClusterTopo().partitions)
+		glog.Errorf("Invalid nodes json:%s with err:%v", string(nodeData), err)
+		return
 	}
+	err = json.Unmarshal(partitionData, &partitions)
+	if nil != err {
+		glog.Errorf("Invalid partition json:%s with err:%v", string(partitionData), err)
+		return
+	}
+	buildNodeTopoFromZk(nodes, partitions)
 }
 
 func buildNodeTopoFromZk(nodes []Node, partitions []Partition) {
@@ -88,7 +72,6 @@ func buildNodeTopoFromZk(nodes []Node, partitions []Partition) {
 	for _, partition := range partitions {
 		if partition.Addr == localHostNamePort {
 			newTopo.selfParitionID = partition.Id
-			break
 		}
 	}
 	for i := 0; i < len(nodes); i++ {
@@ -105,6 +88,8 @@ func buildNodeTopoFromZk(nodes []Node, partitions []Partition) {
 	glog.Infof("Current cluster partitions is %v.", newTopo.partitions)
 	glog.Infof("Current cluster nodes is %v.", newTopo.allNodes)
 	saveClusterTopo(newTopo)
+	ssfClient.clearInvalidConns()
+	ssfClient.checkPartitionConns()
 }
 
 func createZookeeperPath() error {
@@ -139,17 +124,11 @@ func createZookeeperPath() error {
 }
 
 func agentLoop() {
-	go watchPartitions()
 	go watchNodes()
 	for {
 		select {
 		case aev := <-agentEventChannel:
-			if len(aev.nodeData) > 0 {
-				updateClusterNodes(aev.nodeData)
-			}
-			if len(aev.partitionData) > 0 {
-				updateClusterParitions(aev.partitionData)
-			}
+			updateClusterTopo(aev.nodeData, aev.partitionData)
 		}
 	}
 }
