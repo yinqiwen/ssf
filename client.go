@@ -276,7 +276,7 @@ func (c *clusterClient) clearInvalidConns() {
 		}
 	}
 	for i, conn := range c.nodeConns {
-		if conn.addr != getNodeById(int32(i)).Addr {
+		if nil != conn && conn.addr != getNodeById(int32(i)).Addr {
 			c.nodeConns[i] = nil
 		}
 	}

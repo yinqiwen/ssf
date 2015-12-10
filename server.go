@@ -10,19 +10,14 @@ import (
 	"github.com/yinqiwen/gotoolkit/ots"
 )
 
-const (
-	SSF_EVENT_CONN = 1
-	OTS_DEBUG_CONN = 2
-)
-
-type ServerConn struct {
-	ackWindow uint64 //every 64 events
-}
+// type ServerConn struct {
+// 	ackWindow uint64 //every 64 events
+// }
 
 func processSSFEventConnection(c net.Conn) {
 	bc := bufio.NewReader(c)
 	ignoreMagic := true
-	for {
+	for ssfRunning {
 		ev, err := readEvent(bc, ignoreMagic)
 		ignoreMagic = false
 		if nil != err {
@@ -31,17 +26,16 @@ func processSSFEventConnection(c net.Conn) {
 			}
 			c.Close()
 			return
+		}
+		if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {
+			//send heartbeat response back
+			var hbres HeartBeat
+			res := true
+			hbres.Res = &res
+			ev.Msg = &hbres
+			writeEvent(ev, c)
 		} else {
-			if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {
-				//send heartbeat response back
-				var hbres HeartBeat
-				res := true
-				hbres.Res = &res
-				ev.Msg = &hbres
-				writeEvent(ev, c)
-			} else {
-				ssfCfg.Handler.OnEvent(ev)
-			}
+			ssfCfg.Handler.OnEvent(ev)
 		}
 	}
 }
@@ -73,10 +67,12 @@ func startClusterServer(laddr string) error {
 		}
 	}
 
-	for {
+	for ssfRunning {
 		c, _ := l.Accept()
 		if nil != c {
 			go process(c)
 		}
 	}
+	l.Close()
+	return nil
 }

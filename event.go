@@ -197,28 +197,28 @@ func writeEvent(ev *Event, writer io.Writer) error {
 	return err
 }
 
-// return the index which have started is not a full event content
-func consumeEvents(p []byte) int {
-	cursor := 0
-	for {
-		if len(p) <= 8 {
-			return cursor
-		}
-		if !bytes.Equal(p[0:4], MAGIC_EVENT_HEADER) {
-			return cursor
-		}
-		var lengthHeader uint32
-		binary.Read(bytes.NewReader(p[4:8]), binary.LittleEndian, &lengthHeader)
-		msgLen := lengthHeader >> 8
-		headerLen := (lengthHeader & 0xFF)
-		if uint32(len(p)-8) < (msgLen + headerLen) {
-			return cursor
-		}
-		cursor += int(msgLen + headerLen + 8)
-		p = p[(msgLen + headerLen + 8):]
-	}
-	return cursor
-}
+// // return the index which have started is not a full event content
+// func consumeEvents(p []byte) int {
+// 	cursor := 0
+// 	for {
+// 		if len(p) <= 8 {
+// 			return cursor
+// 		}
+// 		if !bytes.Equal(p[0:4], MAGIC_EVENT_HEADER) {
+// 			return cursor
+// 		}
+// 		var lengthHeader uint32
+// 		binary.Read(bytes.NewReader(p[4:8]), binary.LittleEndian, &lengthHeader)
+// 		msgLen := lengthHeader >> 8
+// 		headerLen := (lengthHeader & 0xFF)
+// 		if uint32(len(p)-8) < (msgLen + headerLen) {
+// 			return cursor
+// 		}
+// 		cursor += int(msgLen + headerLen + 8)
+// 		p = p[(msgLen + headerLen + 8):]
+// 	}
+// 	return cursor
+// }
 
 func init() {
 	raw := RawMessage{}

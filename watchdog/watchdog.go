@@ -20,13 +20,24 @@ var serversZkPath string
 var topoNodesPath string
 var topoPartitionsPath string
 
+var addNodeTime int
+var deleteNodeTime int
+
 var connectedServers []ssf.ServerData
+
+type cacheServer struct {
+	addr        string
+	connectTime int64
+	downTime    int64
+}
+
+var cacheServers = make(map[string]*cacheServer)
 
 func currentConnectedServes() []string {
 	var ss []string
 	for _, server := range connectedServers {
 		secs := time.Now().Unix() - server.ConnectedTime
-		if secs >= 30 { //only accept server already connected 30s ago
+		if secs >= addNodeTime { //only accept server already connected 'addNodeTime's ago
 			ss = append(ss, server.Addr)
 		} else {
 			glog.Infof("Server:%s is connected %ds ago.", server.Addr, secs)

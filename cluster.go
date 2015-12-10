@@ -3,6 +3,7 @@ package ssf
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"os"
 	"sync/atomic"
@@ -36,12 +37,17 @@ type clusterTopo struct {
 //var topo clusterTopo
 var ssfCfg ClusterConfig
 var ssfTopo unsafe.Pointer
+var ssfRunning bool
 
 func getClusterTopo() *clusterTopo {
 	return (*clusterTopo)(atomic.LoadPointer(&ssfTopo))
 }
 func saveClusterTopo(topo *clusterTopo) {
 	atomic.StorePointer(&ssfTopo, unsafe.Pointer(topo))
+}
+
+func isClusterTopoEmpty() bool {
+	return len(getClusterTopo().allNodes) > 0
 }
 
 func getNodeByHash(hashCode uint64) *Node {
@@ -135,7 +141,14 @@ func HashCode(s []byte) uint64 {
 
 //Start launch ssf cluster server
 func Start(cfg *ClusterConfig) {
+	ssfRunning = true
 	ssfCfg = *cfg
+	if nil == cfg.Handler {
+		panic("No Handler setting in config.")
+	}
+	if err := trylockFile(ssfCfg.ProcHome); nil != err {
+		panic(fmt.Sprintf("Home:%s is locked by reason:%v", ssfCfg.ProcHome, err))
+	}
 	if len(cfg.ZookeeperServers) > 0 {
 		err := startZkAgent()
 		if nil != err {
@@ -148,11 +161,20 @@ func Start(cfg *ClusterConfig) {
 	}
 	initRoutine()
 	if len(ssfCfg.ListenAddr) > 0 {
-		err := startClusterServer(ssfCfg.ListenAddr)
+		err := ssfCfg.Handler.OnStart()
+		if nil == err {
+			err = startClusterServer(ssfCfg.ListenAddr)
+		}
 		if nil != err {
 			panic(err)
 		}
 	} else {
 		panic("No listen addr specified.")
 	}
+}
+
+//Stop ssf cluster server
+func Stop() {
+	ssfRunning = false
+	ssfCfg.Handler.OnStop()
 }

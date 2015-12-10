@@ -66,11 +66,17 @@ func (wal *WAL) empty() bool {
 	return wal.meta.readedOffset >= wal.meta.fileSize
 }
 
-func (wal *WAL) sync() {
+func (wal *WAL) sync() error {
 	if wal.discard {
-		return
+		return nil
 	}
-	wal.log.Sync()
+	fst, _ := wal.log.Stat()
+	for wal.meta.fileSize+WALMetaSize > fst.Size() {
+		glog.Warningf("Sync WAL[%d] file, since cached file size:%d is larger than stat size:%d", wal.meta.fileSize+WALMetaSize, fst.Size())
+		wal.log.Sync()
+		fst, _ = wal.log.Stat()
+	}
+	return nil
 }
 
 func (wal *WAL) cachedDataSize() int64 {

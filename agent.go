@@ -125,7 +125,7 @@ func createZookeeperPath() error {
 
 func agentLoop() {
 	go watchNodes()
-	for {
+	for ssfRunning {
 		select {
 		case aev := <-agentEventChannel:
 			updateClusterTopo(aev.nodeData, aev.partitionData)
@@ -145,5 +145,9 @@ func startZkAgent() error {
 	}
 	saveClusterTopo(new(clusterTopo)) //set empty default topo
 	go agentLoop()
+	for isClusterTopoEmpty() {
+		time.Sleep(1 * time.Second)
+		glog.Warningf("Cluster topo is empty, wait 1s until agent fetched cluster topo from zk")
+	}
 	return nil
 }
