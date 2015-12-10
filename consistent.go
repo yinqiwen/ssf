@@ -149,6 +149,9 @@ func (c *Consistent) Set(partition Partition) {
 	part = partition
 	delete(c.partitions, part.Addr)
 	c.partitions[part.Addr] = &part
+	if partition.Id >= c.partitionIDSeed {
+		c.partitionIDSeed = partition.Id + 1
+	}
 }
 
 //Update update internal partitions

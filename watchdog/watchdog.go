@@ -5,6 +5,7 @@ import (
 	"flag"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -20,27 +21,36 @@ var serversZkPath string
 var topoNodesPath string
 var topoPartitionsPath string
 
-var addNodeTime int
-var deleteNodeTime int
-
-var connectedServers []ssf.ServerData
+var nodeUptime = uint64(10)
+var nodeDowntime = uint64(30)
 
 type cacheServer struct {
-	addr        string
-	connectTime int64
-	downTime    int64
+	addr     string
+	uptime   int64
+	downtime int64
+	touch    bool
 }
 
+var cacheServersLock sync.Mutex
 var cacheServers = make(map[string]*cacheServer)
 
 func currentConnectedServes() []string {
+	cacheServersLock.Lock()
+	defer cacheServersLock.Unlock()
 	var ss []string
-	for _, server := range connectedServers {
-		secs := time.Now().Unix() - server.ConnectedTime
-		if secs >= addNodeTime { //only accept server already connected 'addNodeTime's ago
-			ss = append(ss, server.Addr)
+	for _, server := range cacheServers {
+		now := time.Now().Unix()
+		if server.downtime > 0 {
+			glog.Warningf("Server:%s is down  %ds ago.", server.addr, now-server.downtime)
+			if now-server.downtime > int64(nodeDowntime) {
+				delete(cacheServers, server.addr)
+				continue
+			}
+		}
+		if now-server.uptime > int64(nodeUptime) {
+			ss = append(ss, server.addr)
 		} else {
-			glog.Infof("Server:%s is connected %ds ago.", server.Addr, secs)
+			glog.Infof("Server:%s is up %ds ago.", server.addr, now-server.uptime)
 		}
 	}
 	return ss
@@ -97,12 +107,29 @@ func watchChildren() {
 				glog.Errorf("Error occured:%v", err)
 			}
 		}
-		connectedServers = ss
+		cacheServersLock.Lock()
+		for _, s := range ss {
+			server, ok := cacheServers[s.Addr]
+			if !ok {
+				server = &cacheServer{}
+				cacheServers[s.Addr] = server
+			}
+			server.addr = s.Addr
+			server.downtime = 0
+			server.uptime = s.ConnectedTime
+			server.touch = true
+		}
+		for _, s := range cacheServers {
+			if !s.touch && s.downtime == 0 {
+				s.downtime = time.Now().Unix()
+			}
+			s.touch = false
+		}
+		cacheServersLock.Unlock()
 		zev := <-ch
 		glog.Infof("Receive zk event:%v", zev)
 	}
 	go watchChildren()
-
 }
 
 func watchdogProcess() {
@@ -194,6 +221,8 @@ func main() {
 	zks := flag.String("zk", "127.0.0.1:2181,127.0.0.1:2182", "zookeeper servers")
 	root := flag.String("root", "mycluster", "zookeeper root path")
 	numOfNodes := flag.Uint("nsize", 128, "cluster virtual node size, default 128")
+	flag.Uint64Var(&nodeDowntime, "downtime", 30, "erase cluster node after downtime(secs)")
+	flag.Uint64Var(&nodeUptime, "uptime", 10, "add cluster node after uptime(secs)")
 	flag.Parse()
 	defer glog.Flush()
 
