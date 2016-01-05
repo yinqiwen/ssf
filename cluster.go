@@ -12,20 +12,22 @@ import (
 	"github.com/golang/glog"
 )
 
-type EventProcessor interface {
-	OnStart() error
-	OnEvent(ev *Event) error
-	OnStop() error
-}
+// type EventProcessor interface {
+// 	OnStart() error
+// 	OnEvent(ev *Event) error
+// 	OnStop() error
+// }
 
+//ClusterConfig :SSF cluster launch option
 type ClusterConfig struct {
 	ZookeeperServers []string
 	SSFServers       []string
-	Handler          EventProcessor
-	ListenAddr       string
-	ProcHome         string
-	ClusterName      string
-	Weight           uint32
+	//Handler          EventProcessor
+	ListenAddr  string
+	ProcHome    string
+	ClusterName string
+	Weight      uint32
+	Dispatch    map[string][]int32
 }
 
 type clusterTopo struct {
@@ -58,7 +60,8 @@ func getNodeByHash(hashCode uint64) *Node {
 	cursor := hashCode & uint64(len(topo.allNodes)-1)
 	return &(topo.allNodes[int(cursor)])
 }
-func getNodeById(id int32) *Node {
+
+func getNodeByID(id int32) *Node {
 	topo := getClusterTopo()
 	return &(topo.allNodes[int(id)])
 }
@@ -143,10 +146,10 @@ func HashCode(s []byte) uint64 {
 func Start(cfg *ClusterConfig) {
 	ssfRunning = true
 	ssfCfg = *cfg
-	if nil == cfg.Handler {
-		panic("No Handler setting in config.")
+	if nil == cfg.Dispatch {
+		panic("No Dispatch setting in config.")
 	}
-	if err := trylockFile(ssfCfg.ProcHome); nil != err {
+	if err := trylockDir(ssfCfg.ProcHome); nil != err {
 		panic(fmt.Sprintf("Home:%s is locked by reason:%v", ssfCfg.ProcHome, err))
 	}
 	if len(cfg.ZookeeperServers) > 0 {
@@ -161,10 +164,7 @@ func Start(cfg *ClusterConfig) {
 	}
 	initRoutine()
 	if len(ssfCfg.ListenAddr) > 0 {
-		err := ssfCfg.Handler.OnStart()
-		if nil == err {
-			err = startClusterServer(ssfCfg.ListenAddr)
-		}
+		err := startClusterServer(ssfCfg.ListenAddr)
 		if nil != err {
 			panic(err)
 		}
@@ -176,5 +176,5 @@ func Start(cfg *ClusterConfig) {
 //Stop ssf cluster server
 func Stop() {
 	ssfRunning = false
-	ssfCfg.Handler.OnStop()
+	//ssfCfg.Handler.OnStop()
 }

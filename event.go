@@ -19,6 +19,12 @@ type Event struct {
 	HashCode uint64
 	MsgType  int32
 	Msg      proto.Message
+	Raw      []byte
+}
+
+//EventHandler define ssf event handler interface
+type EventHandler interface {
+	OnEvent(event *Event) *Event
 }
 
 type RawMessage struct {
@@ -103,7 +109,7 @@ func readMagicHeader(reader io.Reader, buf []byte) ([]byte, error) {
 	return buf[0:4], nil
 }
 
-func readEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
+func readEvent(reader io.Reader, ignoreMagic bool, needRaw bool) (*Event, error) {
 	var lenbuf []byte
 	if !ignoreMagic {
 		lenbuf = make([]byte, 8)
@@ -132,17 +138,12 @@ func readEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
 	}
 	var err error
 	var header EventHeader
-	headerBuf := make([]byte, headerLen)
-	_, err = io.ReadFull(reader, headerBuf)
+	allbuf := make([]byte, headerLen+msgLen)
+	_, err = io.ReadFull(reader, allbuf)
 	if nil != err {
 		return nil, err
 	}
-	err = header.Unmarshal(headerBuf)
-	if nil != err {
-		return nil, err
-	}
-	dataBuf := make([]byte, msgLen)
-	_, err = io.ReadFull(reader, dataBuf)
+	err = header.Unmarshal(allbuf[0:headerLen])
 	if nil != err {
 		return nil, err
 	}
@@ -150,7 +151,7 @@ func readEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
 	if nil == msg {
 		return nil, fmt.Errorf("No msg type found for:%d", header.GetMsgType())
 	}
-	err = proto.Unmarshal(dataBuf, msg)
+	err = proto.Unmarshal(allbuf[headerLen:], msg)
 	if nil != err {
 		return nil, err
 	}
@@ -159,6 +160,14 @@ func readEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
 	ev.HashCode = header.GetHashCode()
 	ev.MsgType = header.GetMsgType()
 	ev.Sequence = header.GetSequenceId()
+	if needRaw {
+		if ignoreMagic {
+			ev.Raw = append(MAGIC_EVENT_HEADER, lenbuf...)
+			ev.Raw = append(ev.Raw, allbuf...)
+		} else {
+			ev.Raw = append(lenbuf, allbuf...)
+		}
+	}
 	return ev, nil
 }
 
@@ -196,29 +205,6 @@ func writeEvent(ev *Event, writer io.Writer) error {
 
 	return err
 }
-
-// // return the index which have started is not a full event content
-// func consumeEvents(p []byte) int {
-// 	cursor := 0
-// 	for {
-// 		if len(p) <= 8 {
-// 			return cursor
-// 		}
-// 		if !bytes.Equal(p[0:4], MAGIC_EVENT_HEADER) {
-// 			return cursor
-// 		}
-// 		var lengthHeader uint32
-// 		binary.Read(bytes.NewReader(p[4:8]), binary.LittleEndian, &lengthHeader)
-// 		msgLen := lengthHeader >> 8
-// 		headerLen := (lengthHeader & 0xFF)
-// 		if uint32(len(p)-8) < (msgLen + headerLen) {
-// 			return cursor
-// 		}
-// 		cursor += int(msgLen + headerLen + 8)
-// 		p = p[(msgLen + headerLen + 8):]
-// 	}
-// 	return cursor
-// }
 
 func init() {
 	raw := RawMessage{}

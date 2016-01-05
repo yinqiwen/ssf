@@ -22,3 +22,13 @@ message EventACK{
     optional int64 sequeceId = 1;
     optional uint64 mask = 2;
 }
+
+Message IPCtrlRequest{
+    optional string cmd = 1;
+    repeated string args = 2;
+}
+
+Message IPCtrlResponse{
+    optional int32 errCode = 1;
+    optional string response = 2;
+}

@@ -3,7 +3,6 @@ package ssf
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -15,19 +14,17 @@ import (
 
 var ssfClient clusterClient
 
-var errNoNode = errors.New("No cluster node to emit msg")
-
 type NodeIOEvent struct {
 	wal   *WAL
 	event []byte
 }
 
-func newNodeEvent(msg proto.Message, hashCode uint64) *NodeIOEvent {
+func encodeNodeEvent(msg proto.Message, hashCode uint64) []byte {
 	var buf bytes.Buffer
 	WriteEvent(msg, hashCode, &buf)
-	ev := new(NodeIOEvent)
-	ev.event = buf.Bytes()
-	return ev
+	// ev := new(NodeIOEvent)
+	// ev.event = buf.Bytes()
+	return buf.Bytes()
 }
 
 func newEmptyNodeEvent() *NodeIOEvent {
@@ -117,7 +114,7 @@ func (nc *rawTCPConn) readloop() {
 			bc = bufio.NewReader(nc.conn)
 			reconnectAfter = 1 * time.Second
 		}
-		ev, err := readEvent(bc, false)
+		ev, err := readEvent(bc, false, false)
 		if nil != err {
 			glog.Warningf("Close connection to %s for reason:%v", nc.addr, err)
 			nc.close()
@@ -125,6 +122,8 @@ func (nc *rawTCPConn) readloop() {
 		}
 		if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {
 			nc.hbPongTime = time.Now().Unix()
+		} else {
+			//TODO nothing now
 		}
 	}
 }
@@ -134,9 +133,10 @@ func (nc *rawTCPConn) heartbeat() {
 		var hb HeartBeat
 		req := true
 		hb.Req = &req
-		ev := newNodeEvent(&hb, 0)
+		var ev NodeIOEvent
+		ev.event = encodeNodeEvent(&hb, 0)
 		ev.wal = newDiscardWAL()
-		nc.write(ev)
+		nc.write(&ev)
 		if nc.hbPongTime == 0 {
 			nc.hbPongTime = time.Now().Unix()
 		}
@@ -234,21 +234,13 @@ func (c *clusterClient) getNodeConn(node *Node) (*rawTCPConn, *WAL, error) {
 	return conn, wal, nil
 }
 
-func (c *clusterClient) emit(msg proto.Message, hashCode uint64) error {
+func (c *clusterClient) emitContent(hashCode uint64, content []byte) error {
 	node := getNodeByHash(hashCode)
 	if nil == node {
-		return errNoNode
+		return ErrNoNode
 	}
-
-	if isSelfNode(node) {
-		var event Event
-		event.HashCode = hashCode
-		event.Msg = msg
-		event.MsgType = GetEventType(msg)
-		ssfCfg.Handler.OnEvent(&event)
-		return nil
-	}
-	ev := newNodeEvent(msg, hashCode)
+	var ev NodeIOEvent
+	ev.event = content
 	conn, wal, err := c.getNodeConn(node)
 	if nil != err {
 		glog.Errorf("Failed to retrive connection or wal to emit event for reason:%v", err)
@@ -256,11 +248,41 @@ func (c *clusterClient) emit(msg proto.Message, hashCode uint64) error {
 	}
 	ev.wal = wal
 	if nil != conn {
-		conn.write(ev)
+		conn.write(&ev)
 	} else if nil != wal {
 		ev.wal.Write(ev.event)
 	}
 	return nil
+}
+
+func (c *clusterClient) emit(msg proto.Message, hashCode uint64) error {
+	// node := getNodeByHash(hashCode)
+	// if nil == node {
+	// 	return errNoNode
+	// }
+
+	// if isSelfNode(node) {
+	// 	var event Event
+	// 	event.HashCode = hashCode
+	// 	event.Msg = msg
+	// 	event.MsgType = GetEventType(msg)
+	// 	ssfCfg.Handler.OnEvent(&event)
+	// 	return nil
+	// }
+	// ev := newNodeEvent(msg, hashCode)
+	// conn, wal, err := c.getNodeConn(node)
+	// if nil != err {
+	// 	glog.Errorf("Failed to retrive connection or wal to emit event for reason:%v", err)
+	// 	return err
+	// }
+	// ev.wal = wal
+	// if nil != conn {
+	// 	conn.write(ev)
+	// } else if nil != wal {
+	// 	ev.wal.Write(ev.event)
+	// }
+	ev := encodeNodeEvent(msg, hashCode)
+	return c.emitContent(hashCode, ev)
 }
 
 func (c *clusterClient) clearInvalidConns() {
@@ -276,7 +298,7 @@ func (c *clusterClient) clearInvalidConns() {
 		}
 	}
 	for i, conn := range c.nodeConns {
-		if nil != conn && conn.addr != getNodeById(int32(i)).Addr {
+		if nil != conn && conn.addr != getNodeByID(int32(i)).Addr {
 			c.nodeConns[i] = nil
 		}
 	}
@@ -286,7 +308,7 @@ func (c *clusterClient) checkPartitionConns() {
 	var checkedAddr = make(map[string]bool)
 	for _, node := range getClusterTopo().allNodes {
 		if _, ok := checkedAddr[node.Addr]; !ok {
-			c.getNodeConn(getNodeById(node.Id))
+			c.getNodeConn(getNodeByID(node.Id))
 			checkedAddr[node.Addr] = true
 		}
 	}
@@ -339,8 +361,12 @@ func (c *clusterClient) heartbeat() {
 	c.nodeConnMu.Unlock()
 }
 
-func Emit(msg proto.Message, hashCode uint64) {
-	ssfClient.emit(msg, hashCode)
+func emit(msg proto.Message, hashCode uint64) error {
+	return ssfClient.emit(msg, hashCode)
+}
+
+func emitContent(content []byte, hashCode uint64) error {
+	return ssfClient.emitContent(hashCode, content)
 }
 
 func init() {
