@@ -365,8 +365,11 @@ func emit(msg proto.Message, hashCode uint64) error {
 	return ssfClient.emit(msg, hashCode)
 }
 
-func emitContent(content []byte, hashCode uint64) error {
-	return ssfClient.emitContent(hashCode, content)
+func emitEvent(event *Event) error {
+	if len(event.Raw) > 0 {
+		return ssfClient.emitContent(event.HashCode, event.Raw)
+	}
+	return ssfClient.emit(event.Msg, event.HashCode)
 }
 
 func init() {

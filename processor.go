@@ -31,6 +31,7 @@ type ProcessorStat struct {
 type Processor interface {
 	OnStart() error
 	OnStop() error
+	OnCommand(cmd string, args []string)(int, string)
 	EventHandler
 }
 
@@ -47,7 +48,14 @@ func (proc *ProcessorEventHander) OnEvent(event *Event) *Event {
         return nil
     }
     go func(){
-        proc.config.Proc.OnEvent(event)
+    	if event.MsgType == EventType_EVENT_CTRLREQ{
+    		ctrl := event.Msg.(*CtrlRequest)
+    		  errcode, res := proc.config.Proc.OnCommand(ctrl.GetCmd(), ctrl.GetArgs())
+
+    		}else{
+    			proc.config.Proc.OnEvent(event)
+    		}
+        
         atomic.AddInt32(&ProcStat.NumOfGORoutines, -1)
     }
 	return nil

@@ -172,15 +172,20 @@ func readEvent(reader io.Reader, ignoreMagic bool, needRaw bool) (*Event, error)
 }
 
 //WriteEvent encode&write message to writer
-func WriteEvent(msg proto.Message, hashCode uint64, writer io.Writer) error {
+func WriteEvent(msg proto.Message, hashCode uint64, seq uint64, writer io.Writer) error {
 	var event Event
 	event.HashCode = hashCode
+	event.Sequence = seq
 	event.MsgType = int32(GetEventType(msg))
 	event.Msg = msg
 	return writeEvent(&event, writer)
 }
 
 func writeEvent(ev *Event, writer io.Writer) error {
+	if len(ev.Raw) > 0 {
+		_, err := writer.Write(ev.Raw)
+		return err
+	}
 	var buf bytes.Buffer
 	dataBuf, err := proto.Marshal(ev.Msg)
 	if nil != err {
@@ -209,6 +214,10 @@ func writeEvent(ev *Event, writer io.Writer) error {
 func init() {
 	raw := RawMessage{}
 	hb := HeartBeat{}
+	ctrlreq := CtrlRequest{}
+	ctrlres := CtrlResponse{}
 	RegisterEvent(int32(EventType_EVENT_RAW), &raw)
 	RegisterEvent(int32(EventType_EVENT_HEARTBEAT), &hb)
+	RegisterEvent(int32(EventType_EVENT_CTRLREQ), &ctrlreq)
+	RegisterEvent(int32(EventType_EVENT_CTRLRES), &ctrlres)
 }

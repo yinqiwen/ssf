@@ -4,6 +4,8 @@ enum EventType{
     EVENT_RAW = 1;
     EVENT_HEARTBEAT = 2;
     EVENT_ACK = 3;
+    EVENT_CTRLREQ = 4;
+    EVENT_CTRLRES = 5;
 }
 
 message EventHeader{
@@ -23,12 +25,12 @@ message EventACK{
     optional uint64 mask = 2;
 }
 
-Message IPCtrlRequest{
+message CtrlRequest{
     optional string cmd = 1;
     repeated string args = 2;
 }
 
-Message IPCtrlResponse{
+message CtrlResponse{
     optional int32 errCode = 1;
     optional string response = 2;
 }

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -139,26 +140,76 @@ func dispatch(event *Event) error {
 	if isSelfNode(node) {
 		ics := getIPChannelsByType(event.MsgType)
 		for _, ic := range ics {
-			ic.Write(event.Raw)
+			//ic.Write(event.Raw)
+			writeEvent(event, ic)
 		}
 		return nil
 	}
-	return emitContent(event.Raw, event.HashCode)
+	return emitEvent(event)
+}
+
+var commandSessions = make(map[uint64]chan *CtrlResponse)
+var commandSessionIDSeed = uint64(0)
+var commondSessionsLock sync.Mutex
+
+func addCommandSession() (uint64, chan *CtrlResponse) {
+	commondSessionsLock.Lock()
+	defer commondSessionsLock.Unlock()
+	id := commandSessionIDSeed
+	commandSessionIDSeed++
+	ch := make(chan *CtrlResponse)
+	commandSessions[id] = ch
+	return id, ch
+}
+
+func triggerCommandSessionRes(res *CtrlResponse, hashCode uint64) {
+	commondSessionsLock.Lock()
+	defer commondSessionsLock.Unlock()
+	ch, ok := commandSessions[hashCode]
+	if !ok {
+		return
+	}
+	delete(commandSessions, hashCode)
+	ch <- res
 }
 
 type ipcEventHandler struct {
 }
 
 func (ipc *ipcEventHandler) OnEvent(event *Event) *Event {
-	if event.MsgType == int32(EventType_EVENT_HEARTBEAT) {
-		//send heartbeat response back
+	switch event.MsgType {
+	case int32(EventType_EVENT_HEARTBEAT):
 		var hbres HeartBeat
 		res := true
 		hbres.Res = &res
 		event.Msg = &hbres
 		event.Raw = nil
 		return event
+	case int32(EventType_EVENT_CTRLRES):
+		triggerCommandSessionRes(event.Msg.(*CtrlResponse), event.HashCode)
+	default:
+		dispatch(event)
 	}
-	dispatch(event)
 	return nil
+}
+
+func LocalCommand(processor string, cmd string, args []string, timeout time.Duration) (int, string) {
+	ic := getIPChannelsByName(processor)
+	if nil == ic || ic.unixConn == nil {
+		return -1, "No connected processor."
+	}
+	timeoutTicker := time.NewTicker(timeout).C
+	var req CtrlRequest
+	req.Args = args
+	req.Cmd = &cmd
+	id, rch := addCommandSession()
+	defer close(rch)
+	WriteEvent(&req, id, ic)
+	select {
+	case res := <-rch:
+		return res.GetErrCode(), res.GetResponse()
+	case <-timeoutTicker:
+		return -1, ErrCommandTimeout.Error()
+	}
+	return 0, ""
 }

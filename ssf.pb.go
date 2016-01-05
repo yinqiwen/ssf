@@ -12,6 +12,8 @@
 		EventHeader
 		HeartBeat
 		EventACK
+		CtrlRequest
+		CtrlResponse
 */
 package ssf
 
@@ -32,17 +34,23 @@ const (
 	EventType_EVENT_RAW       EventType = 1
 	EventType_EVENT_HEARTBEAT EventType = 2
 	EventType_EVENT_ACK       EventType = 3
+	EventType_EVENT_CTRLREQ   EventType = 4
+	EventType_EVENT_CTRLRES   EventType = 5
 )
 
 var EventType_name = map[int32]string{
 	1: "EVENT_RAW",
 	2: "EVENT_HEARTBEAT",
 	3: "EVENT_ACK",
+	4: "EVENT_CTRLREQ",
+	5: "EVENT_CTRLRES",
 }
 var EventType_value = map[string]int32{
 	"EVENT_RAW":       1,
 	"EVENT_HEARTBEAT": 2,
 	"EVENT_ACK":       3,
+	"EVENT_CTRLREQ":   4,
+	"EVENT_CTRLRES":   5,
 }
 
 func (x EventType) Enum() *EventType {
@@ -150,7 +158,60 @@ func (m *EventACK) GetMask() uint64 {
 	return 0
 }
 
+type CtrlRequest struct {
+	Cmd              *string  `protobuf:"bytes,1,opt,name=cmd" json:"cmd,omitempty"`
+	Args             []string `protobuf:"bytes,2,rep,name=args" json:"args,omitempty"`
+	XXX_unrecognized []byte   `json:"-"`
+}
+
+func (m *CtrlRequest) Reset()         { *m = CtrlRequest{} }
+func (m *CtrlRequest) String() string { return proto.CompactTextString(m) }
+func (*CtrlRequest) ProtoMessage()    {}
+
+func (m *CtrlRequest) GetCmd() string {
+	if m != nil && m.Cmd != nil {
+		return *m.Cmd
+	}
+	return ""
+}
+
+func (m *CtrlRequest) GetArgs() []string {
+	if m != nil {
+		return m.Args
+	}
+	return nil
+}
+
+type CtrlResponse struct {
+	ErrCode          *int32  `protobuf:"varint,1,opt,name=errCode" json:"errCode,omitempty"`
+	Response         *string `protobuf:"bytes,2,opt,name=response" json:"response,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *CtrlResponse) Reset()         { *m = CtrlResponse{} }
+func (m *CtrlResponse) String() string { return proto.CompactTextString(m) }
+func (*CtrlResponse) ProtoMessage()    {}
+
+func (m *CtrlResponse) GetErrCode() int32 {
+	if m != nil && m.ErrCode != nil {
+		return *m.ErrCode
+	}
+	return 0
+}
+
+func (m *CtrlResponse) GetResponse() string {
+	if m != nil && m.Response != nil {
+		return *m.Response
+	}
+	return ""
+}
+
 func init() {
+	proto.RegisterType((*EventHeader)(nil), "ssf.EventHeader")
+	proto.RegisterType((*HeartBeat)(nil), "ssf.HeartBeat")
+	proto.RegisterType((*EventACK)(nil), "ssf.EventACK")
+	proto.RegisterType((*CtrlRequest)(nil), "ssf.CtrlRequest")
+	proto.RegisterType((*CtrlResponse)(nil), "ssf.CtrlResponse")
 	proto.RegisterEnum("ssf.EventType", EventType_name, EventType_value)
 }
 func (m *EventHeader) Marshal() (data []byte, err error) {
@@ -266,6 +327,80 @@ func (m *EventACK) MarshalTo(data []byte) (int, error) {
 	return i, nil
 }
 
+func (m *CtrlRequest) Marshal() (data []byte, err error) {
+	size := m.Size()
+	data = make([]byte, size)
+	n, err := m.MarshalTo(data)
+	if err != nil {
+		return nil, err
+	}
+	return data[:n], nil
+}
+
+func (m *CtrlRequest) MarshalTo(data []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if m.Cmd != nil {
+		data[i] = 0xa
+		i++
+		i = encodeVarintSsf(data, i, uint64(len(*m.Cmd)))
+		i += copy(data[i:], *m.Cmd)
+	}
+	if len(m.Args) > 0 {
+		for _, s := range m.Args {
+			data[i] = 0x12
+			i++
+			l = len(s)
+			for l >= 1<<7 {
+				data[i] = uint8(uint64(l)&0x7f | 0x80)
+				l >>= 7
+				i++
+			}
+			data[i] = uint8(l)
+			i++
+			i += copy(data[i:], s)
+		}
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(data[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *CtrlResponse) Marshal() (data []byte, err error) {
+	size := m.Size()
+	data = make([]byte, size)
+	n, err := m.MarshalTo(data)
+	if err != nil {
+		return nil, err
+	}
+	return data[:n], nil
+}
+
+func (m *CtrlResponse) MarshalTo(data []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if m.ErrCode != nil {
+		data[i] = 0x8
+		i++
+		i = encodeVarintSsf(data, i, uint64(*m.ErrCode))
+	}
+	if m.Response != nil {
+		data[i] = 0x12
+		i++
+		i = encodeVarintSsf(data, i, uint64(len(*m.Response)))
+		i += copy(data[i:], *m.Response)
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(data[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
 func encodeFixed64Ssf(data []byte, offset int, v uint64) int {
 	data[offset] = uint8(v)
 	data[offset+1] = uint8(v >> 8)
@@ -337,6 +472,41 @@ func (m *EventACK) Size() (n int) {
 	}
 	if m.Mask != nil {
 		n += 1 + sovSsf(uint64(*m.Mask))
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *CtrlRequest) Size() (n int) {
+	var l int
+	_ = l
+	if m.Cmd != nil {
+		l = len(*m.Cmd)
+		n += 1 + l + sovSsf(uint64(l))
+	}
+	if len(m.Args) > 0 {
+		for _, s := range m.Args {
+			l = len(s)
+			n += 1 + l + sovSsf(uint64(l))
+		}
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *CtrlResponse) Size() (n int) {
+	var l int
+	_ = l
+	if m.ErrCode != nil {
+		n += 1 + sovSsf(uint64(*m.ErrCode))
+	}
+	if m.Response != nil {
+		l = len(*m.Response)
+		n += 1 + l + sovSsf(uint64(l))
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -650,6 +820,217 @@ func (m *EventACK) Unmarshal(data []byte) error {
 				}
 			}
 			m.Mask = &v
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSsf(data[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthSsf
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, data[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CtrlRequest) Unmarshal(data []byte) error {
+	l := len(data)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSsf
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CtrlRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CtrlRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Cmd", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSsf
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			s := string(data[iNdEx:postIndex])
+			m.Cmd = &s
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Args", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSsf
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Args = append(m.Args, string(data[iNdEx:postIndex]))
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSsf(data[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthSsf
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, data[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CtrlResponse) Unmarshal(data []byte) error {
+	l := len(data)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSsf
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CtrlResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CtrlResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ErrCode", wireType)
+			}
+			var v int32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				v |= (int32(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ErrCode = &v
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Response", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSsf
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			s := string(data[iNdEx:postIndex])
+			m.Response = &s
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSsf(data[iNdEx:])
