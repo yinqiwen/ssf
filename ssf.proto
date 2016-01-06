@@ -1,23 +1,16 @@
 package ssf;
 
-enum EventType{
-    EVENT_RAW = 1;
-    EVENT_HEARTBEAT = 2;
-    EVENT_ACK = 3;
-    EVENT_CTRLREQ = 4;
-    EVENT_CTRLRES = 5;
-}
-
 message EventHeader{
     optional uint64 sequenceId = 1;
     optional uint64 hashCode = 2;
     optional int32 nodeId = 3;
-    optional int32 msgType = 4;
+    optional string msgType = 4;
 }
 
 message HeartBeat{
     optional bool req = 1;
     optional bool res = 2;
+    optional uint32 ts = 3;
 }
 
 message EventACK{

@@ -19,9 +19,9 @@ type NodeIOEvent struct {
 	event []byte
 }
 
-func encodeNodeEvent(msg proto.Message, hashCode uint64) []byte {
+func encodeNodeEvent(msg proto.Message, hashCode, seq uint64) []byte {
 	var buf bytes.Buffer
-	WriteEvent(msg, hashCode, &buf)
+	WriteEvent(msg, hashCode, seq, &buf)
 	// ev := new(NodeIOEvent)
 	// ev.event = buf.Bytes()
 	return buf.Bytes()
@@ -114,13 +114,13 @@ func (nc *rawTCPConn) readloop() {
 			bc = bufio.NewReader(nc.conn)
 			reconnectAfter = 1 * time.Second
 		}
-		ev, err := readEvent(bc, false, false)
+		ev, err := readEvent(bc, false, true)
 		if nil != err {
 			glog.Warningf("Close connection to %s for reason:%v", nc.addr, err)
 			nc.close()
 			return
 		}
-		if ev.MsgType == int32(EventType_EVENT_HEARTBEAT) {
+		if _, ok := ev.Msg.(*HeartBeat); ok {
 			nc.hbPongTime = time.Now().Unix()
 		} else {
 			//TODO nothing now
@@ -134,7 +134,7 @@ func (nc *rawTCPConn) heartbeat() {
 		req := true
 		hb.Req = &req
 		var ev NodeIOEvent
-		ev.event = encodeNodeEvent(&hb, 0)
+		ev.event = encodeNodeEvent(&hb, 0, 0)
 		ev.wal = newDiscardWAL()
 		nc.write(&ev)
 		if nc.hbPongTime == 0 {
@@ -255,33 +255,8 @@ func (c *clusterClient) emitContent(hashCode uint64, content []byte) error {
 	return nil
 }
 
-func (c *clusterClient) emit(msg proto.Message, hashCode uint64) error {
-	// node := getNodeByHash(hashCode)
-	// if nil == node {
-	// 	return errNoNode
-	// }
-
-	// if isSelfNode(node) {
-	// 	var event Event
-	// 	event.HashCode = hashCode
-	// 	event.Msg = msg
-	// 	event.MsgType = GetEventType(msg)
-	// 	ssfCfg.Handler.OnEvent(&event)
-	// 	return nil
-	// }
-	// ev := newNodeEvent(msg, hashCode)
-	// conn, wal, err := c.getNodeConn(node)
-	// if nil != err {
-	// 	glog.Errorf("Failed to retrive connection or wal to emit event for reason:%v", err)
-	// 	return err
-	// }
-	// ev.wal = wal
-	// if nil != conn {
-	// 	conn.write(ev)
-	// } else if nil != wal {
-	// 	ev.wal.Write(ev.event)
-	// }
-	ev := encodeNodeEvent(msg, hashCode)
+func (c *clusterClient) emit(msg proto.Message, hashCode, seq uint64) error {
+	ev := encodeNodeEvent(msg, hashCode, seq)
 	return c.emitContent(hashCode, ev)
 }
 
@@ -361,15 +336,15 @@ func (c *clusterClient) heartbeat() {
 	c.nodeConnMu.Unlock()
 }
 
-func emit(msg proto.Message, hashCode uint64) error {
-	return ssfClient.emit(msg, hashCode)
+func emit(msg proto.Message, hashCode, seq uint64) error {
+	return ssfClient.emit(msg, hashCode, seq)
 }
 
 func emitEvent(event *Event) error {
 	if len(event.Raw) > 0 {
 		return ssfClient.emitContent(event.HashCode, event.Raw)
 	}
-	return ssfClient.emit(event.Msg, event.HashCode)
+	return ssfClient.emit(event.Msg, event.HashCode, event.Sequence)
 }
 
 func init() {

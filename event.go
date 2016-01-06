@@ -6,20 +6,38 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"sync"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 )
 
 var MAGIC_EVENT_HEADER []byte = []byte("SSFE")
 var MAGIC_OTSC_HEADER []byte = []byte("OTSC")
 
 type Event struct {
+	Length   uint32
 	Sequence uint64
 	HashCode uint64
-	MsgType  int32
+	MsgType  string
 	Msg      proto.Message
 	Raw      []byte
+}
+
+func (ev *Event) Decode() error {
+	if nil != ev.Msg {
+		return nil
+	}
+	t := proto.MessageType(ev.MsgType)
+	if nil == t {
+		return fmt.Errorf("No msg type found for:%s", ev.MsgType)
+	}
+	msg := reflect.New(t.Elem()).Interface().(proto.Message)
+	pos := (ev.Length & 0xFF) + 8
+	err := proto.Unmarshal(ev.Raw[pos:], msg)
+	if nil != err {
+		return err
+	}
+	ev.Msg = msg
+	return nil
 }
 
 //EventHandler define ssf event handler interface
@@ -56,48 +74,6 @@ func NewRawMessage(str string) *RawMessage {
 	return msg
 }
 
-var int2Reflect = make(map[int32]reflect.Type)
-var reflect2Int = make(map[reflect.Type]int32)
-var lk sync.Mutex // guards maps
-
-//RegisterEvent register message with int type
-func RegisterEvent(eventType int32, ev proto.Message) {
-	t := reflect.TypeOf(ev).Elem()
-	lk.Lock()
-	defer lk.Unlock()
-	if _, ok := int2Reflect[eventType]; ok {
-		panic(fmt.Errorf("Duplicate registration with type:%d", eventType))
-	}
-	if oldInt, ok := reflect2Int[t]; ok && eventType != oldInt {
-		panic(fmt.Errorf("Same type:%T already registed as:%d", ev, eventType))
-	}
-	int2Reflect[eventType] = t
-	reflect2Int[t] = eventType
-}
-
-func GetEventByType(eventType int32) proto.Message {
-	lk.Lock()
-	defer lk.Unlock()
-	oldType, ok := int2Reflect[eventType]
-	if !ok {
-		return nil
-	}
-
-	return reflect.New(oldType).Interface().(proto.Message)
-}
-
-//GetEventType return the registed int type of proto message
-// return -1 if no such message registed
-func GetEventType(ev proto.Message) int32 {
-	lk.Lock()
-	defer lk.Unlock()
-	oldType, ok := reflect2Int[reflect.TypeOf(ev).Elem()]
-	if !ok {
-		return -1
-	}
-	return oldType
-}
-
 func readMagicHeader(reader io.Reader, buf []byte) ([]byte, error) {
 	if len(buf) < 4 {
 		return nil, fmt.Errorf("Invalid buf space")
@@ -109,10 +85,10 @@ func readMagicHeader(reader io.Reader, buf []byte) ([]byte, error) {
 	return buf[0:4], nil
 }
 
-func readEvent(reader io.Reader, ignoreMagic bool, needRaw bool) (*Event, error) {
-	var lenbuf []byte
+func readRawEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
+	allbuf := make([]byte, 256)
+	lenbuf := allbuf[0:8]
 	if !ignoreMagic {
-		lenbuf = make([]byte, 8)
 		magic, err := readMagicHeader(reader, lenbuf)
 		if nil != err {
 			return nil, err
@@ -120,63 +96,65 @@ func readEvent(reader io.Reader, ignoreMagic bool, needRaw bool) (*Event, error)
 		if !bytes.Equal(magic, MAGIC_EVENT_HEADER) {
 			return nil, fmt.Errorf("Invalid magic header:%s", string(magic))
 		}
-		lenbuf = lenbuf[4:8]
 	} else {
-		lenbuf = make([]byte, 4)
-		_, err := io.ReadFull(reader, lenbuf)
+		copy(lenbuf[0:4], MAGIC_EVENT_HEADER)
+		_, err := io.ReadFull(reader, lenbuf[4:8])
 		if nil != err {
 			return nil, err
 		}
 	}
 
 	var lengthHeader uint32
-	binary.Read(bytes.NewReader(lenbuf), binary.LittleEndian, &lengthHeader)
+	binary.Read(bytes.NewReader(lenbuf[4:8]), binary.LittleEndian, &lengthHeader)
 	msgLen := lengthHeader >> 8
 	headerLen := (lengthHeader & 0xFF)
-	if headerLen > 100 || msgLen > 512*1024*1024 {
+	if headerLen > 128 || msgLen > 512*1024*1024 {
 		return nil, fmt.Errorf("Too large msg header len:%d or body len:%d", headerLen, msgLen)
 	}
 	var err error
 	var header EventHeader
-	allbuf := make([]byte, headerLen+msgLen)
-	_, err = io.ReadFull(reader, allbuf)
+	totalLen := int(headerLen + msgLen + 8)
+	if len(allbuf) < totalLen {
+		allbuf = append(allbuf, make([]byte, totalLen-len(allbuf))...)
+	} else {
+		allbuf = allbuf[0:totalLen]
+	}
+	_, err = io.ReadFull(reader, allbuf[8:])
 	if nil != err {
 		return nil, err
 	}
-	err = header.Unmarshal(allbuf[0:headerLen])
-	if nil != err {
-		return nil, err
-	}
-	msg := GetEventByType(header.GetMsgType())
-	if nil == msg {
-		return nil, fmt.Errorf("No msg type found for:%d", header.GetMsgType())
-	}
-	err = proto.Unmarshal(allbuf[headerLen:], msg)
+	err = header.Unmarshal(allbuf[8 : headerLen+8])
 	if nil != err {
 		return nil, err
 	}
 	ev := new(Event)
-	ev.Msg = msg
+	ev.Length = lengthHeader
 	ev.HashCode = header.GetHashCode()
 	ev.MsgType = header.GetMsgType()
 	ev.Sequence = header.GetSequenceId()
-	if needRaw {
-		if ignoreMagic {
-			ev.Raw = append(MAGIC_EVENT_HEADER, lenbuf...)
-			ev.Raw = append(ev.Raw, allbuf...)
-		} else {
-			ev.Raw = append(lenbuf, allbuf...)
+	ev.Raw = allbuf
+	return ev, nil
+}
+
+func readEvent(reader io.Reader, ignoreMagic, decodeBody bool) (*Event, error) {
+	ev, err := readRawEvent(reader, ignoreMagic)
+	if nil != err {
+		return nil, err
+	}
+	if decodeBody {
+		err = ev.Decode()
+		if nil != err {
+			return nil, err
 		}
 	}
 	return ev, nil
 }
 
 //WriteEvent encode&write message to writer
-func WriteEvent(msg proto.Message, hashCode uint64, seq uint64, writer io.Writer) error {
+func WriteEvent(msg proto.Message, hashCode, seq uint64, writer io.Writer) error {
 	var event Event
 	event.HashCode = hashCode
 	event.Sequence = seq
-	event.MsgType = int32(GetEventType(msg))
 	event.Msg = msg
 	return writeEvent(&event, writer)
 }
@@ -193,8 +171,10 @@ func writeEvent(ev *Event, writer io.Writer) error {
 	}
 
 	var header EventHeader
+	ev.MsgType = proto.MessageName(ev.Msg)
 	header.MsgType = &(ev.MsgType)
 	header.HashCode = &ev.HashCode
+	header.SequenceId = &ev.Sequence
 	headbuf, _ := proto.Marshal(&header)
 	headerLen := uint32(len(headbuf))
 
@@ -212,12 +192,5 @@ func writeEvent(ev *Event, writer io.Writer) error {
 }
 
 func init() {
-	raw := RawMessage{}
-	hb := HeartBeat{}
-	ctrlreq := CtrlRequest{}
-	ctrlres := CtrlResponse{}
-	RegisterEvent(int32(EventType_EVENT_RAW), &raw)
-	RegisterEvent(int32(EventType_EVENT_HEARTBEAT), &hb)
-	RegisterEvent(int32(EventType_EVENT_CTRLREQ), &ctrlreq)
-	RegisterEvent(int32(EventType_EVENT_CTRLRES), &ctrlres)
+	proto.RegisterType((*RawMessage)(nil), "ssf.RawMessage")
 }

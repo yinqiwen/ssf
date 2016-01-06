@@ -27,7 +27,7 @@ type ClusterConfig struct {
 	ProcHome    string
 	ClusterName string
 	Weight      uint32
-	Dispatch    map[string][]int32
+	Dispatch    map[string][]string
 }
 
 type clusterTopo struct {
@@ -149,6 +149,7 @@ func Start(cfg *ClusterConfig) {
 	if nil == cfg.Dispatch {
 		panic("No Dispatch setting in config.")
 	}
+	os.MkdirAll(ssfCfg.ProcHome, 0770)
 	if err := trylockDir(ssfCfg.ProcHome); nil != err {
 		panic(fmt.Sprintf("Home:%s is locked by reason:%v", ssfCfg.ProcHome, err))
 	}
@@ -163,6 +164,7 @@ func Start(cfg *ClusterConfig) {
 		panic("Invalid config to start ssf.")
 	}
 	initRoutine()
+    updateDispatchTable(ssfCfg.Dispatch)
 	if len(ssfCfg.ListenAddr) > 0 {
 		err := startClusterServer(ssfCfg.ListenAddr)
 		if nil != err {
@@ -177,4 +179,10 @@ func Start(cfg *ClusterConfig) {
 func Stop() {
 	ssfRunning = false
 	//ssfCfg.Handler.OnStop()
+}
+
+//UpdateConfig update current config on the fly
+func UpdateConfig(cfg *ClusterConfig) {
+	//Currently, only update processor dispatch config
+	updateDispatchTable(cfg.Dispatch)
 }

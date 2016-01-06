@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
 )
 
 type ipchannel struct {
@@ -33,6 +34,7 @@ func (ic *ipchannel) evloop() {
 		case _ = <-ic.closech:
 			ic.unixConn.Close()
 			ic.unixConn = nil
+			glog.Infof("Processor:%s disconnect.", ic.name)
 		}
 	}
 }
@@ -45,6 +47,13 @@ func (ic *ipchannel) Read(p []byte) (n int, err error) {
 }
 
 func (ic *ipchannel) Close() error {
+	if nil == ic.unixConn || !ssfRunning {
+		if nil != ic.unixConn {
+			ic.unixConn.Close()
+			ic.unixConn = nil
+		}
+		return nil
+	}
 	ic.closech <- 1
 	return nil
 }
@@ -61,7 +70,7 @@ func (ic *ipchannel) Write(p []byte) (n int, err error) {
 
 type dispatchTable struct {
 	allChannels map[string]*ipchannel
-	routeTable  map[int32][]*ipchannel
+	routeTable  map[string][]*ipchannel
 }
 
 var ssfDispatchTable unsafe.Pointer
@@ -69,7 +78,7 @@ var ssfDispatchTable unsafe.Pointer
 func init() {
 	dis := new(dispatchTable)
 	dis.allChannels = make(map[string]*ipchannel)
-	dis.routeTable = make(map[int32][]*ipchannel)
+	dis.routeTable = make(map[string][]*ipchannel)
 	atomic.StorePointer(&ssfDispatchTable, unsafe.Pointer(dis))
 }
 
@@ -80,10 +89,10 @@ func saveDispatchTable(dis *dispatchTable) {
 	atomic.StorePointer(&ssfDispatchTable, unsafe.Pointer(dis))
 }
 
-func updateDispatchTable(cfg map[string][]int32) {
+func updateDispatchTable(cfg map[string][]string) {
 	newDispatch := new(dispatchTable)
 	newDispatch.allChannels = make(map[string]*ipchannel)
-	newDispatch.routeTable = make(map[int32][]*ipchannel)
+	newDispatch.routeTable = make(map[string][]*ipchannel)
 
 	oldDispatch := getDispatchTable()
 	for proc, types := range cfg {
@@ -105,7 +114,7 @@ func updateDispatchTable(cfg map[string][]int32) {
 	saveDispatchTable(newDispatch)
 }
 
-func getIPChannelsByType(msgType int32) []*ipchannel {
+func getIPChannelsByType(msgType string) []*ipchannel {
 	ics, ok := getDispatchTable().routeTable[msgType]
 	if ok {
 		return ics
@@ -127,7 +136,10 @@ func addIPChannel(unixConn net.Conn) *ipchannel {
 	proc := addr[0 : len(addr)-len(extension)]
 	ic := getIPChannelsByName(proc)
 	if nil != ic {
+		glog.Infof("Processor:%s connected.", proc)
 		ic.unixConn = unixConn
+	} else {
+		glog.Warningf("No processor:%s defined in IPC disptach table.", proc)
 	}
 	return ic
 }
@@ -178,22 +190,24 @@ type ipcEventHandler struct {
 
 func (ipc *ipcEventHandler) OnEvent(event *Event) *Event {
 	switch event.MsgType {
-	case int32(EventType_EVENT_HEARTBEAT):
+	case proto.MessageName((*HeartBeat)(nil)):
 		var hbres HeartBeat
 		res := true
 		hbres.Res = &res
-		event.Msg = &hbres
-		event.Raw = nil
-		return event
-	case int32(EventType_EVENT_CTRLRES):
-		triggerCommandSessionRes(event.Msg.(*CtrlResponse), event.HashCode)
+		hbevent := &Event{}
+		hbevent.Msg = &hbres
+		return hbevent
+	case proto.MessageName((*CtrlResponse)(nil)):
+		event.Decode()
+		triggerCommandSessionRes(event.Msg.(*CtrlResponse), event.Sequence)
 	default:
 		dispatch(event)
 	}
 	return nil
 }
 
-func LocalCommand(processor string, cmd string, args []string, timeout time.Duration) (int, string) {
+//LocalCommand send command to given procesor and return response from the processor
+func LocalCommand(processor string, cmd string, args []string, timeout time.Duration) (int32, string) {
 	ic := getIPChannelsByName(processor)
 	if nil == ic || ic.unixConn == nil {
 		return -1, "No connected processor."
@@ -204,7 +218,7 @@ func LocalCommand(processor string, cmd string, args []string, timeout time.Dura
 	req.Cmd = &cmd
 	id, rch := addCommandSession()
 	defer close(rch)
-	WriteEvent(&req, id, ic)
+	WriteEvent(&req, 0, id, ic)
 	select {
 	case res := <-rch:
 		return res.GetErrCode(), res.GetResponse()

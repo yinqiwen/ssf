@@ -48,6 +48,9 @@ func (m *Word) GetCount() int32 {
 	return 0
 }
 
+func init() {
+	proto.RegisterType((*Word)(nil), "main.Word")
+}
 func (m *Word) Marshal() (data []byte, err error) {
 	size := m.Size()
 	data = make([]byte, size)

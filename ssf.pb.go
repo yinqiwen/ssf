@@ -28,53 +28,11 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
-type EventType int32
-
-const (
-	EventType_EVENT_RAW       EventType = 1
-	EventType_EVENT_HEARTBEAT EventType = 2
-	EventType_EVENT_ACK       EventType = 3
-	EventType_EVENT_CTRLREQ   EventType = 4
-	EventType_EVENT_CTRLRES   EventType = 5
-)
-
-var EventType_name = map[int32]string{
-	1: "EVENT_RAW",
-	2: "EVENT_HEARTBEAT",
-	3: "EVENT_ACK",
-	4: "EVENT_CTRLREQ",
-	5: "EVENT_CTRLRES",
-}
-var EventType_value = map[string]int32{
-	"EVENT_RAW":       1,
-	"EVENT_HEARTBEAT": 2,
-	"EVENT_ACK":       3,
-	"EVENT_CTRLREQ":   4,
-	"EVENT_CTRLRES":   5,
-}
-
-func (x EventType) Enum() *EventType {
-	p := new(EventType)
-	*p = x
-	return p
-}
-func (x EventType) String() string {
-	return proto.EnumName(EventType_name, int32(x))
-}
-func (x *EventType) UnmarshalJSON(data []byte) error {
-	value, err := proto.UnmarshalJSONEnum(EventType_value, data, "EventType")
-	if err != nil {
-		return err
-	}
-	*x = EventType(value)
-	return nil
-}
-
 type EventHeader struct {
 	SequenceId       *uint64 `protobuf:"varint,1,opt,name=sequenceId" json:"sequenceId,omitempty"`
 	HashCode         *uint64 `protobuf:"varint,2,opt,name=hashCode" json:"hashCode,omitempty"`
 	NodeId           *int32  `protobuf:"varint,3,opt,name=nodeId" json:"nodeId,omitempty"`
-	MsgType          *int32  `protobuf:"varint,4,opt,name=msgType" json:"msgType,omitempty"`
+	MsgType          *string `protobuf:"bytes,4,opt,name=msgType" json:"msgType,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
@@ -103,11 +61,11 @@ func (m *EventHeader) GetNodeId() int32 {
 	return 0
 }
 
-func (m *EventHeader) GetMsgType() int32 {
+func (m *EventHeader) GetMsgType() string {
 	if m != nil && m.MsgType != nil {
 		return *m.MsgType
 	}
-	return 0
+	return ""
 }
 
 type HeartBeat struct {
@@ -212,7 +170,6 @@ func init() {
 	proto.RegisterType((*EventACK)(nil), "ssf.EventACK")
 	proto.RegisterType((*CtrlRequest)(nil), "ssf.CtrlRequest")
 	proto.RegisterType((*CtrlResponse)(nil), "ssf.CtrlResponse")
-	proto.RegisterEnum("ssf.EventType", EventType_name, EventType_value)
 }
 func (m *EventHeader) Marshal() (data []byte, err error) {
 	size := m.Size()
@@ -245,9 +202,10 @@ func (m *EventHeader) MarshalTo(data []byte) (int, error) {
 		i = encodeVarintSsf(data, i, uint64(*m.NodeId))
 	}
 	if m.MsgType != nil {
-		data[i] = 0x20
+		data[i] = 0x22
 		i++
-		i = encodeVarintSsf(data, i, uint64(*m.MsgType))
+		i = encodeVarintSsf(data, i, uint64(len(*m.MsgType)))
+		i += copy(data[i:], *m.MsgType)
 	}
 	if m.XXX_unrecognized != nil {
 		i += copy(data[i:], m.XXX_unrecognized)
@@ -441,7 +399,8 @@ func (m *EventHeader) Size() (n int) {
 		n += 1 + sovSsf(uint64(*m.NodeId))
 	}
 	if m.MsgType != nil {
-		n += 1 + sovSsf(uint64(*m.MsgType))
+		l = len(*m.MsgType)
+		n += 1 + l + sovSsf(uint64(l))
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -617,10 +576,10 @@ func (m *EventHeader) Unmarshal(data []byte) error {
 			}
 			m.NodeId = &v
 		case 4:
-			if wireType != 0 {
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field MsgType", wireType)
 			}
-			var v int32
+			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowSsf
@@ -630,12 +589,22 @@ func (m *EventHeader) Unmarshal(data []byte) error {
 				}
 				b := data[iNdEx]
 				iNdEx++
-				v |= (int32(b) & 0x7F) << shift
+				stringLen |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			m.MsgType = &v
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSsf
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			s := string(data[iNdEx:postIndex])
+			m.MsgType = &s
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSsf(data[iNdEx:])

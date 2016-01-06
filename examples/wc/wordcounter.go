@@ -3,24 +3,28 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"sync"
 
 	"github.com/golang/glog"
 	"github.com/yinqiwen/ssf"
 )
 
-const WORD_COUNT_EVENT = 100
-
 type MyProcessor struct {
 	counts map[string]uint64
+	lk     sync.Mutex
 }
 
 func (proc *MyProcessor) dump() {
+	proc.lk.Lock()
+	defer proc.lk.Unlock()
 	fmt.Printf("Start dump word count results\n")
 	for k, c := range proc.counts {
 		fmt.Printf("Word:%s Count=%d\n", k, c)
 	}
-	fmt.Printf("\n")
+	fmt.Printf("End dump word count results\n")
 }
 
 func (proc *MyProcessor) parseLine(msg *ssf.RawMessage) {
@@ -35,13 +39,20 @@ func (proc *MyProcessor) parseLine(msg *ssf.RawMessage) {
 }
 
 func (proc *MyProcessor) count(word *Word) {
+	proc.lk.Lock()
+	defer proc.lk.Unlock()
 	proc.counts[word.GetWord()] += uint64(word.GetCount())
 }
 
-func (proc *MyProcessor) OnEvent(ev *ssf.Event) *Event {
-	if ev.MsgType == int32(ssf.EventType_EVENT_RAW) {
+func (proc *MyProcessor) OnCommand(cmd string, args []string) (int32, string) {
+	return 0, ""
+}
+
+func (proc *MyProcessor) OnEvent(ev *ssf.Event) *ssf.Event {
+	switch ev.Msg.(type) {
+	case *ssf.RawMessage:
 		proc.parseLine(ev.Msg.(*ssf.RawMessage))
-	} else if ev.MsgType == int32(WORD_COUNT_EVENT) {
+	case *Word:
 		proc.count(ev.Msg.(*Word))
 	}
 	return nil
@@ -53,34 +64,28 @@ func (proc *MyProcessor) OnStop() error {
 	return nil
 }
 
-// func readSocket(l net.Listener) {
-// 	process := func(c net.Conn) {
-// 		bc := bufio.NewReader(c)
-// 		scanner := bufio.NewScanner(bc)
-// 		for scanner.Scan() {
-// 			line := scanner.Text()
-// 			rawMsg := ssf.NewRawMessage(line)
-// 			ssf.Emit(rawMsg, ssf.HashCode([]byte(line)))
-// 		}
-// 		c.Close()
-// 	}
-
-// 	for {
-// 		c, _ := l.Accept()
-// 		if nil != c {
-// 			go process(c)
-// 		}
-// 	}
-// }
-
 func main() {
+	home := flag.String("home", "./", "application home dir")
+	cluster := flag.String("cluster", "example", "cluster name")
 	flag.Parse()
 	defer glog.Flush()
-	//word := Word{}
-	ssf.RegisterEvent(WORD_COUNT_EVENT, &Word{})
 
+	var proc MyProcessor
+	proc.counts = make(map[string]uint64)
 	var config ssf.ProcessorConfig
-	config.ClusterName = ""
-	config.Proc = &MyProcessor{}
+	config.ClusterName = *cluster
+	config.Home = *home
+	config.Proc = &proc
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for _ = range c {
+			// sig is a ^C, handle it
+			proc.dump()
+			os.Exit(0)
+		}
+	}()
+
 	ssf.StartProcessor(&config)
 }

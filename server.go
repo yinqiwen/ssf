@@ -3,8 +3,10 @@ package ssf
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"os"
 
 	"github.com/golang/glog"
 	"github.com/yinqiwen/gotoolkit/ots"
@@ -14,11 +16,11 @@ import (
 // 	ackWindow uint64 //every 64 events
 // }
 
-func processSSFEventConnection(c io.ReadWriteCloser, hander EventHandler) {
+func processSSFEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander EventHandler) {
 	bc := bufio.NewReader(c)
 	ignoreMagic := true
 	for ssfRunning {
-		ev, err := readEvent(bc, ignoreMagic, true)
+		ev, err := readEvent(bc, ignoreMagic, decodeEvent)
 		ignoreMagic = false
 		if nil != err {
 			if err != io.EOF {
@@ -32,9 +34,10 @@ func processSSFEventConnection(c io.ReadWriteCloser, hander EventHandler) {
 			writeEvent(ev, c)
 		}
 	}
+	c.Close()
 }
 
-func processEventConnection(c io.ReadWriteCloser, hander EventHandler) {
+func processEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander EventHandler) {
 	//test connection type
 	magicBuf := make([]byte, 4)
 	magic, err := readMagicHeader(c, magicBuf)
@@ -44,7 +47,7 @@ func processEventConnection(c io.ReadWriteCloser, hander EventHandler) {
 		}
 	} else {
 		if bytes.Equal(magic, MAGIC_EVENT_HEADER) {
-			processSSFEventConnection(c, hander)
+			processSSFEventConnection(c, decodeEvent, hander)
 		} else if bytes.EqualFold(magic, MAGIC_OTSC_HEADER) {
 			ots.ProcessTroubleShooting(c)
 		} else {
@@ -52,11 +55,10 @@ func processEventConnection(c io.ReadWriteCloser, hander EventHandler) {
 
 		}
 	}
-	c.Close()
 }
 
 func runServer(l net.Listener) {
-	isIPCServer := false
+	_, isIPCServer := l.(*net.UnixListener)
 	ipc := &ipcEventHandler{}
 	for ssfRunning {
 		c, _ := l.Accept()
@@ -64,16 +66,26 @@ func runServer(l net.Listener) {
 			var rwc io.ReadWriteCloser
 			rwc = c
 			if isIPCServer {
-				rwc = addIPChannel(c)
+				ic := addIPChannel(c)
+				if nil == ic {
+					c.Close()
+					continue
+				}
+				rwc = ic
 			}
-			go processEventConnection(rwc, ipc)
+			go processEventConnection(rwc, false, ipc)
 		}
 	}
 	l.Close()
 }
 
 func startClusterServer(laddr string) error {
+	os.MkdirAll(ssfCfg.ProcHome+"/ipc", 0770)
 	ipcAddr := ssfCfg.ProcHome + "/ipc/" + ssfCfg.ClusterName + ".sock"
+	if err := trylockFile(ipcAddr); nil != err {
+		return fmt.Errorf("IPC file:%s is locked by reason:%v", ipcAddr, err)
+	}
+	os.Remove(ipcAddr)
 	l, err := net.Listen("unix", ipcAddr)
 	if nil != err {
 		return err

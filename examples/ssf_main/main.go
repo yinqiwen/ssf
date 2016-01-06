@@ -29,8 +29,8 @@ func main() {
 	}
 	cfg.ClusterName = cs[0]
 	cfg.SSFServers = strings.Split(cs[1], ",")
-	cfg.Dispatch = map[string][]int32{
-		"wc": []int32{1, wordCountEventType},
+	cfg.Dispatch = map[string][]string{
+		"wc": []string{"ssf.RawMessage", "main.Word"},
 	}
 	ssf.Start(&cfg)
 }
