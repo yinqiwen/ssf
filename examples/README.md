@@ -18,7 +18,6 @@ Follow the steps below to build the 3 apps.
 # Test
 In this example we would launch 2 framework process in same machine to simulate a cluster with 2 nodes. The number of cluster nodes could be modified by 'ssf_main' argument '-cluster'.
 
-Before all test, assume that
 ## Launch SSF Framework
 The example ssf framework process usage:
     
