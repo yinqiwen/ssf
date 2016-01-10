@@ -2,6 +2,7 @@ package ssf
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -13,55 +14,69 @@ import (
 )
 
 var procipc = &ipchannel{}
+var procConfig *ProcessorConfig
 var procGORoutinesCounter gstat.CountTrack
 var procLatencyTrack gstat.CostTrack
 var procQPSTrack gstat.QPSTrack
+var isSSFProcessor bool
 
 func init() {
 	procipc.name = filepath.Base(os.Args[0])
 	procipc.ech = make(chan []byte, 100000)
 	procipc.closech = make(chan int)
+}
 
+func isFrameworkProcessor() bool {
+	return isSSFProcessor
+}
+
+func getProcessorName() string {
+	if isFrameworkProcessor() {
+		return ssfCfg.ClusterName
+	}
+	return procConfig.Name
 }
 
 //Processor define go version sub processor interface
 type Processor interface {
 	OnStart() error
 	OnStop() error
-	OnCommand(cmd string, args []string) (int32, string)
-	EventHandler
+	OnRPC(request proto.Message) proto.Message
+	OnMessage(msg proto.Message, hashCode uint64)
+	//OnEvent(event *Event)
 }
 
 type processorEventHander struct {
-	config *ProcessorConfig
 }
 
-func (proc *processorEventHander) OnEvent(event *Event) *Event {
+func (proc *processorEventHander) OnEvent(event *Event, conn io.ReadWriteCloser) {
 	procQPSTrack.IncMsgCount(1)
-	if procGORoutinesCounter.Add(1) > int64(proc.config.MaxGORoutine) {
+	if procGORoutinesCounter.Add(1) > int64(procConfig.MaxGORoutine) {
 		procGORoutinesCounter.Add(-1)
 		glog.Warningf("Too many[%d] goroutines in processor, discard incoming event.", procGORoutinesCounter.Get())
-		return nil
+		return
 	}
 	go func() {
-		switch event.Msg.(type) {
-		case *CtrlRequest:
-			req := event.Msg.(*CtrlRequest)
-			errcode, reason := proc.config.Proc.OnCommand(req.GetCmd(), req.GetArgs())
-			res := &CtrlResponse{}
-			res.Response = &reason
-			res.ErrCode = &errcode
-			WriteEvent(res, event.HashCode, event.Sequence, procipc)
-		default:
-			start := time.Now().UnixNano()
-			proc.config.Proc.OnEvent(event)
-			end := time.Now().UnixNano()
-			cost := (end - start) / 1000000 //millsecs
-			procLatencyTrack.AddCost(cost)
+		start := time.Now().UnixNano()
+		if event.GetType() == EventType_NOTIFY {
+			procConfig.Proc.OnMessage(event.Msg, event.GetHashCode())
+		} else {
+			if event.GetTo() != getProcessorName() {
+				fmt.Errorf("Recv msg %T to %s, but current processor is %s", event.Msg, event.GetTo(), getProcessorName())
+				return
+			}
+			if event.GetType() == EventType_RESPONSE {
+				triggerClientSessionRes(event.Msg, event.GetHashCode())
+			} else {
+				res := procConfig.Proc.OnRPC(event.Msg)
+				response(res, event, procipc)
+			}
 		}
+		end := time.Now().UnixNano()
+		cost := (end - start) / 1000000 //millsecs
+		procLatencyTrack.AddCost(cost)
 		procGORoutinesCounter.Add(-1)
 	}()
-	return nil
 }
 
 //ProcessorConfig is the start option
@@ -106,7 +121,7 @@ func runProcessor(config *ProcessorConfig) error {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		hander := &processorEventHander{config}
+		hander := &processorEventHander{}
 		processEventConnection(procipc, true, hander)
 		//procipc.Close()
 	}
@@ -130,6 +145,8 @@ func StartProcessor(config *ProcessorConfig) error {
 	gstat.AddStatTrack("LatencyOf"+config.Name, &procLatencyTrack)
 	gstat.AddStatTrack("QPSOf"+config.Name, &procQPSTrack)
 	ssfRunning = true
+	isSSFProcessor = true
+	procConfig = config
 	runProcessor(config)
 	return nil
 }
@@ -139,5 +156,5 @@ func Emit(msg proto.Message, hashCode uint64) error {
 	if nil == procipc.unixConn {
 		return ErrSSFDisconnect
 	}
-	return WriteEvent(msg, hashCode, 0, procipc)
+	return notify(msg, hashCode, procipc)
 }

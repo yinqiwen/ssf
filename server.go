@@ -16,7 +16,7 @@ import (
 // 	ackWindow uint64 //every 64 events
 // }
 
-func processSSFEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander EventHandler) {
+func processSSFEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander ipcEventHandler) {
 	bc := bufio.NewReader(c)
 	ignoreMagic := true
 	for ssfRunning {
@@ -29,15 +29,12 @@ func processSSFEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander Ev
 			c.Close()
 			return
 		}
-		ev = hander.OnEvent(ev)
-		if nil != ev {
-			writeEvent(ev, c)
-		}
+		hander.OnEvent(ev, c)
 	}
 	c.Close()
 }
 
-func processEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander EventHandler) {
+func processEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander ipcEventHandler) {
 	//test connection type
 	magicBuf := make([]byte, 4)
 	magic, err := readMagicHeader(c, magicBuf)
@@ -59,7 +56,7 @@ func processEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander Event
 
 func runServer(l net.Listener) {
 	_, isIPCServer := l.(*net.UnixListener)
-	ipc := &ipcEventHandler{}
+	ipc := &procIPCEventHandler{}
 	for ssfRunning {
 		c, _ := l.Accept()
 		if nil != c {

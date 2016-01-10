@@ -1,10 +1,10 @@
 package ssf
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"path/filepath"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -145,12 +145,13 @@ func addIPChannel(unixConn net.Conn) *ipchannel {
 }
 
 func dispatch(event *Event) error {
-	node := getNodeByHash(event.HashCode)
+
+	node := getNodeByHash(event.GetHashCode())
 	if nil == node {
 		return ErrNoNode
 	}
 	if isSelfNode(node) {
-		ics := getIPChannelsByType(event.MsgType)
+		ics := getIPChannelsByType(event.GetMsgType())
 		for _, ic := range ics {
 			//ic.Write(event.Raw)
 			writeEvent(event, ic)
@@ -160,70 +161,64 @@ func dispatch(event *Event) error {
 	return emitEvent(event)
 }
 
-var commandSessions = make(map[uint64]chan *CtrlResponse)
-var commandSessionIDSeed = uint64(0)
-var commondSessionsLock sync.Mutex
-
-func addCommandSession() (uint64, chan *CtrlResponse) {
-	commondSessionsLock.Lock()
-	defer commondSessionsLock.Unlock()
-	id := commandSessionIDSeed
-	commandSessionIDSeed++
-	ch := make(chan *CtrlResponse)
-	commandSessions[id] = ch
-	return id, ch
+type procIPCEventHandler struct {
 }
 
-func triggerCommandSessionRes(res *CtrlResponse, hashCode uint64) {
-	commondSessionsLock.Lock()
-	defer commondSessionsLock.Unlock()
-	ch, ok := commandSessions[hashCode]
-	if !ok {
-		return
+func (ipc *procIPCEventHandler) OnEvent(event *Event, conn io.ReadWriteCloser) {
+	if event.GetType() == EventType_NOTIFY {
+		switch event.GetMsgType() {
+		case proto.MessageName((*HeartBeat)(nil)):
+			var hbres HeartBeat
+			res := true
+			hbres.Res = &res
+			notify(&hbres, 0, conn)
+		default:
+			dispatch(event)
+		}
+	} else {
+		if event.GetTo() != getProcessorName() {
+			dispatch(event)
+			return
+		}
+		event.decode()
+		if event.GetType() == EventType_RESPONSE {
+			triggerClientSessionRes(event.Msg, event.GetHashCode())
+		} else {
+			//hanlder event
+		}
 	}
-	delete(commandSessions, hashCode)
-	ch <- res
 }
 
-type ipcEventHandler struct {
-}
-
-func (ipc *ipcEventHandler) OnEvent(event *Event) *Event {
-	switch event.MsgType {
-	case proto.MessageName((*HeartBeat)(nil)):
-		var hbres HeartBeat
-		res := true
-		hbres.Res = &res
-		hbevent := &Event{}
-		hbevent.Msg = &hbres
-		return hbevent
-	case proto.MessageName((*CtrlResponse)(nil)):
-		event.Decode()
-		triggerCommandSessionRes(event.Msg.(*CtrlResponse), event.Sequence)
-	default:
-		dispatch(event)
+func LocalRPC(processor string, request proto.Message, timeout time.Duration) (proto.Message, error) {
+	var channel io.Writer
+	if isFrameworkProcessor() {
+		ic := getIPChannelsByName(processor)
+		if nil == ic || ic.unixConn == nil {
+			return nil, fmt.Errorf("No connected processor:%s", processor)
+		}
+		channel = ic
+	} else {
+		if procipc.unixConn == nil {
+			return nil, ErrSSFDisconnect
+		}
+		channel = procipc
 	}
-	return nil
+	return rpc(processor, request, timeout, channel)
 }
 
 //LocalCommand send command to given procesor and return response from the processor
 func LocalCommand(processor string, cmd string, args []string, timeout time.Duration) (int32, string) {
-	ic := getIPChannelsByName(processor)
-	if nil == ic || ic.unixConn == nil {
-		return -1, "No connected processor."
-	}
-	timeoutTicker := time.NewTicker(timeout).C
 	var req CtrlRequest
 	req.Args = args
 	req.Cmd = &cmd
-	id, rch := addCommandSession()
-	defer close(rch)
-	WriteEvent(&req, 0, id, ic)
-	select {
-	case res := <-rch:
-		return res.GetErrCode(), res.GetResponse()
-	case <-timeoutTicker:
-		return -1, ErrCommandTimeout.Error()
+	res, err := LocalRPC(processor, &req, timeout)
+	if nil != err {
+		return -1, err.Error()
+	}
+	if ctrlres, ok := res.(*CtrlResponse); !ok {
+		return -1, fmt.Sprintf("Invalid type for control response:%T", res)
+	} else {
+		return ctrlres.GetErrCode(), ctrlres.GetResponse()
 	}
 	return 0, ""
 }

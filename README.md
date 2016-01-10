@@ -15,12 +15,13 @@ Simple streaming process framework
     + Dynamic Multi Servers(with zookeeper dependency)
 - Standalone Process Task 
     + All tasks is running as standalone process, which communicate framework over unix sockets.
+    + Multi language support
 - Write Ahead Log
     + Cache data when cluster do failover work or some cluster node is temporary unavailable. 
 
 # Example
 
-- [Word Count](https://github.com/yinqiwen/ssf/tree/master/examples).
+- [Word Count](https://github.com/yinqiwen/ssf/tree/master/examples)
 
 
 

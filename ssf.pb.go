@@ -28,12 +28,51 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+type EventType int32
+
+const (
+	EventType_NOTIFY   EventType = 0
+	EventType_REQUEST  EventType = 1
+	EventType_RESPONSE EventType = 2
+)
+
+var EventType_name = map[int32]string{
+	0: "NOTIFY",
+	1: "REQUEST",
+	2: "RESPONSE",
+}
+var EventType_value = map[string]int32{
+	"NOTIFY":   0,
+	"REQUEST":  1,
+	"RESPONSE": 2,
+}
+
+func (x EventType) Enum() *EventType {
+	p := new(EventType)
+	*p = x
+	return p
+}
+func (x EventType) String() string {
+	return proto.EnumName(EventType_name, int32(x))
+}
+func (x *EventType) UnmarshalJSON(data []byte) error {
+	value, err := proto.UnmarshalJSONEnum(EventType_value, data, "EventType")
+	if err != nil {
+		return err
+	}
+	*x = EventType(value)
+	return nil
+}
+
 type EventHeader struct {
-	SequenceId       *uint64 `protobuf:"varint,1,opt,name=sequenceId" json:"sequenceId,omitempty"`
-	HashCode         *uint64 `protobuf:"varint,2,opt,name=hashCode" json:"hashCode,omitempty"`
-	NodeId           *int32  `protobuf:"varint,3,opt,name=nodeId" json:"nodeId,omitempty"`
-	MsgType          *string `protobuf:"bytes,4,opt,name=msgType" json:"msgType,omitempty"`
-	XXX_unrecognized []byte  `json:"-"`
+	SequenceId       *uint64    `protobuf:"varint,1,opt,name=sequenceId" json:"sequenceId,omitempty"`
+	HashCode         *uint64    `protobuf:"varint,2,opt,name=hashCode" json:"hashCode,omitempty"`
+	NodeId           *int32     `protobuf:"varint,3,opt,name=nodeId" json:"nodeId,omitempty"`
+	MsgType          *string    `protobuf:"bytes,4,opt,name=msgType" json:"msgType,omitempty"`
+	From             *string    `protobuf:"bytes,5,opt,name=from" json:"from,omitempty"`
+	To               *string    `protobuf:"bytes,6,opt,name=to" json:"to,omitempty"`
+	Type             *EventType `protobuf:"varint,7,opt,name=type,enum=ssf.EventType" json:"type,omitempty"`
+	XXX_unrecognized []byte     `json:"-"`
 }
 
 func (m *EventHeader) Reset()         { *m = EventHeader{} }
@@ -68,10 +107,32 @@ func (m *EventHeader) GetMsgType() string {
 	return ""
 }
 
+func (m *EventHeader) GetFrom() string {
+	if m != nil && m.From != nil {
+		return *m.From
+	}
+	return ""
+}
+
+func (m *EventHeader) GetTo() string {
+	if m != nil && m.To != nil {
+		return *m.To
+	}
+	return ""
+}
+
+func (m *EventHeader) GetType() EventType {
+	if m != nil && m.Type != nil {
+		return *m.Type
+	}
+	return EventType_NOTIFY
+}
+
 type HeartBeat struct {
-	Req              *bool  `protobuf:"varint,1,opt,name=req" json:"req,omitempty"`
-	Res              *bool  `protobuf:"varint,2,opt,name=res" json:"res,omitempty"`
-	XXX_unrecognized []byte `json:"-"`
+	Req              *bool   `protobuf:"varint,1,opt,name=req" json:"req,omitempty"`
+	Res              *bool   `protobuf:"varint,2,opt,name=res" json:"res,omitempty"`
+	Ts               *uint32 `protobuf:"varint,3,opt,name=ts" json:"ts,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *HeartBeat) Reset()         { *m = HeartBeat{} }
@@ -92,22 +153,21 @@ func (m *HeartBeat) GetRes() bool {
 	return false
 }
 
+func (m *HeartBeat) GetTs() uint32 {
+	if m != nil && m.Ts != nil {
+		return *m.Ts
+	}
+	return 0
+}
+
 type EventACK struct {
-	SequeceId        *int64  `protobuf:"varint,1,opt,name=sequeceId" json:"sequeceId,omitempty"`
-	Mask             *uint64 `protobuf:"varint,2,opt,name=mask" json:"mask,omitempty"`
+	Mask             *uint64 `protobuf:"varint,1,opt,name=mask" json:"mask,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
 func (m *EventACK) Reset()         { *m = EventACK{} }
 func (m *EventACK) String() string { return proto.CompactTextString(m) }
 func (*EventACK) ProtoMessage()    {}
-
-func (m *EventACK) GetSequeceId() int64 {
-	if m != nil && m.SequeceId != nil {
-		return *m.SequeceId
-	}
-	return 0
-}
 
 func (m *EventACK) GetMask() uint64 {
 	if m != nil && m.Mask != nil {
@@ -170,6 +230,7 @@ func init() {
 	proto.RegisterType((*EventACK)(nil), "ssf.EventACK")
 	proto.RegisterType((*CtrlRequest)(nil), "ssf.CtrlRequest")
 	proto.RegisterType((*CtrlResponse)(nil), "ssf.CtrlResponse")
+	proto.RegisterEnum("ssf.EventType", EventType_name, EventType_value)
 }
 func (m *EventHeader) Marshal() (data []byte, err error) {
 	size := m.Size()
@@ -206,6 +267,23 @@ func (m *EventHeader) MarshalTo(data []byte) (int, error) {
 		i++
 		i = encodeVarintSsf(data, i, uint64(len(*m.MsgType)))
 		i += copy(data[i:], *m.MsgType)
+	}
+	if m.From != nil {
+		data[i] = 0x2a
+		i++
+		i = encodeVarintSsf(data, i, uint64(len(*m.From)))
+		i += copy(data[i:], *m.From)
+	}
+	if m.To != nil {
+		data[i] = 0x32
+		i++
+		i = encodeVarintSsf(data, i, uint64(len(*m.To)))
+		i += copy(data[i:], *m.To)
+	}
+	if m.Type != nil {
+		data[i] = 0x38
+		i++
+		i = encodeVarintSsf(data, i, uint64(*m.Type))
 	}
 	if m.XXX_unrecognized != nil {
 		i += copy(data[i:], m.XXX_unrecognized)
@@ -248,6 +326,11 @@ func (m *HeartBeat) MarshalTo(data []byte) (int, error) {
 		}
 		i++
 	}
+	if m.Ts != nil {
+		data[i] = 0x18
+		i++
+		i = encodeVarintSsf(data, i, uint64(*m.Ts))
+	}
 	if m.XXX_unrecognized != nil {
 		i += copy(data[i:], m.XXX_unrecognized)
 	}
@@ -269,13 +352,8 @@ func (m *EventACK) MarshalTo(data []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.SequeceId != nil {
-		data[i] = 0x8
-		i++
-		i = encodeVarintSsf(data, i, uint64(*m.SequeceId))
-	}
 	if m.Mask != nil {
-		data[i] = 0x10
+		data[i] = 0x8
 		i++
 		i = encodeVarintSsf(data, i, uint64(*m.Mask))
 	}
@@ -402,6 +480,17 @@ func (m *EventHeader) Size() (n int) {
 		l = len(*m.MsgType)
 		n += 1 + l + sovSsf(uint64(l))
 	}
+	if m.From != nil {
+		l = len(*m.From)
+		n += 1 + l + sovSsf(uint64(l))
+	}
+	if m.To != nil {
+		l = len(*m.To)
+		n += 1 + l + sovSsf(uint64(l))
+	}
+	if m.Type != nil {
+		n += 1 + sovSsf(uint64(*m.Type))
+	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
 	}
@@ -417,6 +506,9 @@ func (m *HeartBeat) Size() (n int) {
 	if m.Res != nil {
 		n += 2
 	}
+	if m.Ts != nil {
+		n += 1 + sovSsf(uint64(*m.Ts))
+	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
 	}
@@ -426,9 +518,6 @@ func (m *HeartBeat) Size() (n int) {
 func (m *EventACK) Size() (n int) {
 	var l int
 	_ = l
-	if m.SequeceId != nil {
-		n += 1 + sovSsf(uint64(*m.SequeceId))
-	}
 	if m.Mask != nil {
 		n += 1 + sovSsf(uint64(*m.Mask))
 	}
@@ -605,6 +694,86 @@ func (m *EventHeader) Unmarshal(data []byte) error {
 			s := string(data[iNdEx:postIndex])
 			m.MsgType = &s
 			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field From", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSsf
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			s := string(data[iNdEx:postIndex])
+			m.From = &s
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field To", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSsf
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			s := string(data[iNdEx:postIndex])
+			m.To = &s
+			iNdEx = postIndex
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+			}
+			var v EventType
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				v |= (EventType(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Type = &v
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSsf(data[iNdEx:])
@@ -698,6 +867,26 @@ func (m *HeartBeat) Unmarshal(data []byte) error {
 			}
 			b := bool(v != 0)
 			m.Res = &b
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Ts", wireType)
+			}
+			var v uint32
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				v |= (uint32(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Ts = &v
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSsf(data[iNdEx:])
@@ -750,26 +939,6 @@ func (m *EventACK) Unmarshal(data []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field SequeceId", wireType)
-			}
-			var v int64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSsf
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[iNdEx]
-				iNdEx++
-				v |= (int64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.SequeceId = &v
-		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Mask", wireType)
 			}

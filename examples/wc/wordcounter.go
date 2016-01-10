@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/glog"
 	"github.com/yinqiwen/ssf"
 )
@@ -44,18 +45,17 @@ func (proc *MyProcessor) count(word *Word) {
 	proc.counts[word.GetWord()] += uint64(word.GetCount())
 }
 
-func (proc *MyProcessor) OnCommand(cmd string, args []string) (int32, string) {
-	return 0, ""
+func (proc *MyProcessor) OnRPC(request proto.Message) proto.Message {
+	return nil
 }
 
-func (proc *MyProcessor) OnEvent(ev *ssf.Event) *ssf.Event {
-	switch ev.Msg.(type) {
+func (proc *MyProcessor) OnMessage(msg proto.Message, hashCode uint64) {
+	switch msg.(type) {
 	case *ssf.RawMessage:
-		proc.parseLine(ev.Msg.(*ssf.RawMessage))
+		proc.parseLine(msg.(*ssf.RawMessage))
 	case *Word:
-		proc.count(ev.Msg.(*Word))
+		proc.count(msg.(*Word))
 	}
-	return nil
 }
 func (proc *MyProcessor) OnStart() error {
 	return nil

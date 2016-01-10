@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"sync"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 )
@@ -14,25 +16,24 @@ var MAGIC_EVENT_HEADER []byte = []byte("SSFE")
 var MAGIC_OTSC_HEADER []byte = []byte("OTSC")
 
 type Event struct {
-	Length   uint32
-	Sequence uint64
-	HashCode uint64
-	MsgType  string
-	Msg      proto.Message
-	Raw      []byte
+	EventHeader
+	Msg proto.Message
+
+	length uint32
+	raw    []byte
 }
 
-func (ev *Event) Decode() error {
+func (ev *Event) decode() error {
 	if nil != ev.Msg {
 		return nil
 	}
-	t := proto.MessageType(ev.MsgType)
+	t := proto.MessageType(ev.GetMsgType())
 	if nil == t {
-		return fmt.Errorf("No msg type found for:%s", ev.MsgType)
+		return fmt.Errorf("No msg type found for:%s", ev.GetMsgType())
 	}
 	msg := reflect.New(t.Elem()).Interface().(proto.Message)
-	pos := (ev.Length & 0xFF) + 8
-	err := proto.Unmarshal(ev.Raw[pos:], msg)
+	pos := (ev.length & 0xFF) + 8
+	err := proto.Unmarshal(ev.raw[pos:], msg)
 	if nil != err {
 		return err
 	}
@@ -40,9 +41,9 @@ func (ev *Event) Decode() error {
 	return nil
 }
 
-//EventHandler define ssf event handler interface
-type EventHandler interface {
-	OnEvent(event *Event) *Event
+//handle event or IPC channel
+type ipcEventHandler interface {
+	OnEvent(event *Event, conn io.ReadWriteCloser)
 }
 
 type RawMessage struct {
@@ -112,7 +113,8 @@ func readRawEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
 		return nil, fmt.Errorf("Too large msg header len:%d or body len:%d", headerLen, msgLen)
 	}
 	var err error
-	var header EventHeader
+	ev := new(Event)
+	//var header EventHeader
 	totalLen := int(headerLen + msgLen + 8)
 	if len(allbuf) < totalLen {
 		allbuf = append(allbuf, make([]byte, totalLen-len(allbuf))...)
@@ -123,16 +125,13 @@ func readRawEvent(reader io.Reader, ignoreMagic bool) (*Event, error) {
 	if nil != err {
 		return nil, err
 	}
-	err = header.Unmarshal(allbuf[8 : headerLen+8])
+	err = ev.Unmarshal(allbuf[8 : headerLen+8])
 	if nil != err {
 		return nil, err
 	}
-	ev := new(Event)
-	ev.Length = lengthHeader
-	ev.HashCode = header.GetHashCode()
-	ev.MsgType = header.GetMsgType()
-	ev.Sequence = header.GetSequenceId()
-	ev.Raw = allbuf
+
+	ev.length = lengthHeader
+	ev.raw = allbuf
 	return ev, nil
 }
 
@@ -142,7 +141,7 @@ func readEvent(reader io.Reader, ignoreMagic, decodeBody bool) (*Event, error) {
 		return nil, err
 	}
 	if decodeBody {
-		err = ev.Decode()
+		err = ev.decode()
 		if nil != err {
 			return nil, err
 		}
@@ -150,18 +149,95 @@ func readEvent(reader io.Reader, ignoreMagic, decodeBody bool) (*Event, error) {
 	return ev, nil
 }
 
-//WriteEvent encode&write message to writer
-func WriteEvent(msg proto.Message, hashCode, seq uint64, writer io.Writer) error {
+func notify(msg proto.Message, hashCode uint64, writer io.Writer) error {
 	var event Event
-	event.HashCode = hashCode
-	event.Sequence = seq
+	event.HashCode = &hashCode
 	event.Msg = msg
+	event.Type = EventType_NOTIFY.Enum()
 	return writeEvent(&event, writer)
 }
 
+var clientSessions = make(map[uint64]chan proto.Message)
+var clientSessionIDSeed = uint64(0)
+var clientSessionsLock sync.Mutex
+
+func addClientRPCSession() (uint64, chan proto.Message) {
+	clientSessionsLock.Lock()
+	defer clientSessionsLock.Unlock()
+	id := clientSessionIDSeed
+	clientSessionIDSeed++
+	ch := make(chan proto.Message)
+	clientSessions[id] = ch
+	return id, ch
+}
+
+func triggerClientSessionRes(res proto.Message, hashCode uint64) {
+	clientSessionsLock.Lock()
+	defer clientSessionsLock.Unlock()
+	if nil != res {
+		ch, ok := clientSessions[hashCode]
+		if !ok {
+			return
+		}
+		ch <- res
+	}
+	delete(clientSessions, hashCode)
+}
+
+func rpc(processor string, request proto.Message, timeout time.Duration, wr io.Writer) (proto.Message, error) {
+	id, rch := addClientRPCSession()
+	defer close(rch)
+	var event Event
+	event.HashCode = &id
+	event.Msg = request
+	event.Type = EventType_REQUEST.Enum()
+	proc := getProcessorName()
+	event.From = &proc
+	event.To = &processor
+	err := writeEvent(&event, wr)
+	if nil != err {
+		return nil, err
+	}
+	timeoutTicker := time.NewTicker(timeout).C
+	select {
+	case res := <-rch:
+		return res, nil
+	case <-timeoutTicker:
+		triggerClientSessionRes(nil, id)
+		return nil, ErrCommandTimeout
+	}
+	return nil, ErrCommandTimeout
+}
+
+func response(res proto.Message, request *Event, wr io.Writer) error {
+	var event Event
+	event.HashCode = request.HashCode
+	event.Msg = res
+	event.Type = EventType_RESPONSE.Enum()
+	event.From = request.To
+	event.To = request.From
+	return writeEvent(&event, wr)
+}
+
+// func rpc(msg proto.Message, writer io.Writer) error {
+// 	var event Event
+// 	//event.HashCode = &hashCode
+// 	event.Msg = msg
+
+// }
+
+//WriteEvent encode&write message to writer
+// func WriteEvent(msg proto.Message, hashCode, seq uint64, writer io.Writer) error {
+// 	var event Event
+// 	event.HashCode = &hashCode
+// 	event.SequenceId = &seq
+// 	event.Msg = msg
+// 	return writeEvent(&event, writer)
+// }
+
 func writeEvent(ev *Event, writer io.Writer) error {
-	if len(ev.Raw) > 0 {
-		_, err := writer.Write(ev.Raw)
+	if len(ev.raw) > 0 {
+		_, err := writer.Write(ev.raw)
 		return err
 	}
 	var buf bytes.Buffer
@@ -169,13 +245,9 @@ func writeEvent(ev *Event, writer io.Writer) error {
 	if nil != err {
 		return err
 	}
-
-	var header EventHeader
-	ev.MsgType = proto.MessageName(ev.Msg)
-	header.MsgType = &(ev.MsgType)
-	header.HashCode = &ev.HashCode
-	header.SequenceId = &ev.Sequence
-	headbuf, _ := proto.Marshal(&header)
+	msgtype := proto.MessageName(ev.Msg)
+	ev.MsgType = &msgtype
+	headbuf, _ := proto.Marshal(ev)
 	headerLen := uint32(len(headbuf))
 
 	// length = msglength(3byte) + headerlen(1byte)

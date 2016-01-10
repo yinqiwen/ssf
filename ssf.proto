@@ -1,10 +1,19 @@
 package ssf;
 
+enum EventType {
+    NOTIFY = 0;
+    REQUEST = 1;
+    RESPONSE = 2;
+}
+
 message EventHeader{
     optional uint64 sequenceId = 1;
     optional uint64 hashCode = 2;
     optional int32 nodeId = 3;
     optional string msgType = 4;
+    optional string from  = 5;
+    optional string to  = 6;
+    optional EventType type = 7;
 }
 
 message HeartBeat{
@@ -14,8 +23,7 @@ message HeartBeat{
 }
 
 message EventACK{
-    optional int64 sequeceId = 1;
-    optional uint64 mask = 2;
+    optional uint64 mask = 1;
 }
 
 message CtrlRequest{
@@ -27,3 +35,4 @@ message CtrlResponse{
     optional int32 errCode = 1;
     optional string response = 2;
 }
+
