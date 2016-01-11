@@ -83,6 +83,10 @@ func startClusterServer(laddr string) error {
 		return fmt.Errorf("IPC file:%s is locked by reason:%v", ipcAddr, err)
 	}
 	os.Remove(ipcAddr)
+
+	ots.RegisterHandler("PS", ps, 0, 0, "PS                List all processors")
+	ots.RegisterHandler("CD", cd, 1, 1, "CD  <Processor>   Enter sub-processor online trouble shooting mode")
+
 	l, err := net.Listen("unix", ipcAddr)
 	if nil != err {
 		return err

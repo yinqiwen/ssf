@@ -12,8 +12,9 @@
 		EventHeader
 		HeartBeat
 		EventACK
-		CtrlRequest
-		CtrlResponse
+		AdminEvent
+		AdminRequest
+		AdminResponse
 */
 package ssf
 
@@ -176,60 +177,61 @@ func (m *EventACK) GetMask() uint64 {
 	return 0
 }
 
-type CtrlRequest struct {
-	Cmd              *string  `protobuf:"bytes,1,opt,name=cmd" json:"cmd,omitempty"`
-	Args             []string `protobuf:"bytes,2,rep,name=args" json:"args,omitempty"`
-	XXX_unrecognized []byte   `json:"-"`
-}
-
-func (m *CtrlRequest) Reset()         { *m = CtrlRequest{} }
-func (m *CtrlRequest) String() string { return proto.CompactTextString(m) }
-func (*CtrlRequest) ProtoMessage()    {}
-
-func (m *CtrlRequest) GetCmd() string {
-	if m != nil && m.Cmd != nil {
-		return *m.Cmd
-	}
-	return ""
-}
-
-func (m *CtrlRequest) GetArgs() []string {
-	if m != nil {
-		return m.Args
-	}
-	return nil
-}
-
-type CtrlResponse struct {
-	ErrCode          *int32  `protobuf:"varint,1,opt,name=errCode" json:"errCode,omitempty"`
-	Response         *string `protobuf:"bytes,2,opt,name=response" json:"response,omitempty"`
+type AdminEvent struct {
+	Content          *string `protobuf:"bytes,1,opt,name=content" json:"content,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
-func (m *CtrlResponse) Reset()         { *m = CtrlResponse{} }
-func (m *CtrlResponse) String() string { return proto.CompactTextString(m) }
-func (*CtrlResponse) ProtoMessage()    {}
+func (m *AdminEvent) Reset()         { *m = AdminEvent{} }
+func (m *AdminEvent) String() string { return proto.CompactTextString(m) }
+func (*AdminEvent) ProtoMessage()    {}
 
-func (m *CtrlResponse) GetErrCode() int32 {
-	if m != nil && m.ErrCode != nil {
-		return *m.ErrCode
-	}
-	return 0
-}
-
-func (m *CtrlResponse) GetResponse() string {
-	if m != nil && m.Response != nil {
-		return *m.Response
+func (m *AdminEvent) GetContent() string {
+	if m != nil && m.Content != nil {
+		return *m.Content
 	}
 	return ""
+}
+
+type AdminRequest struct {
+	Line             *string `protobuf:"bytes,1,opt,name=line" json:"line,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *AdminRequest) Reset()         { *m = AdminRequest{} }
+func (m *AdminRequest) String() string { return proto.CompactTextString(m) }
+func (*AdminRequest) ProtoMessage()    {}
+
+func (m *AdminRequest) GetLine() string {
+	if m != nil && m.Line != nil {
+		return *m.Line
+	}
+	return ""
+}
+
+type AdminResponse struct {
+	Close            *bool  `protobuf:"varint,1,opt,name=close" json:"close,omitempty"`
+	XXX_unrecognized []byte `json:"-"`
+}
+
+func (m *AdminResponse) Reset()         { *m = AdminResponse{} }
+func (m *AdminResponse) String() string { return proto.CompactTextString(m) }
+func (*AdminResponse) ProtoMessage()    {}
+
+func (m *AdminResponse) GetClose() bool {
+	if m != nil && m.Close != nil {
+		return *m.Close
+	}
+	return false
 }
 
 func init() {
 	proto.RegisterType((*EventHeader)(nil), "ssf.EventHeader")
 	proto.RegisterType((*HeartBeat)(nil), "ssf.HeartBeat")
 	proto.RegisterType((*EventACK)(nil), "ssf.EventACK")
-	proto.RegisterType((*CtrlRequest)(nil), "ssf.CtrlRequest")
-	proto.RegisterType((*CtrlResponse)(nil), "ssf.CtrlResponse")
+	proto.RegisterType((*AdminEvent)(nil), "ssf.AdminEvent")
+	proto.RegisterType((*AdminRequest)(nil), "ssf.AdminRequest")
+	proto.RegisterType((*AdminResponse)(nil), "ssf.AdminResponse")
 	proto.RegisterEnum("ssf.EventType", EventType_name, EventType_value)
 }
 func (m *EventHeader) Marshal() (data []byte, err error) {
@@ -363,7 +365,7 @@ func (m *EventACK) MarshalTo(data []byte) (int, error) {
 	return i, nil
 }
 
-func (m *CtrlRequest) Marshal() (data []byte, err error) {
+func (m *AdminEvent) Marshal() (data []byte, err error) {
 	size := m.Size()
 	data = make([]byte, size)
 	n, err := m.MarshalTo(data)
@@ -373,31 +375,16 @@ func (m *CtrlRequest) Marshal() (data []byte, err error) {
 	return data[:n], nil
 }
 
-func (m *CtrlRequest) MarshalTo(data []byte) (int, error) {
+func (m *AdminEvent) MarshalTo(data []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
 	_ = l
-	if m.Cmd != nil {
+	if m.Content != nil {
 		data[i] = 0xa
 		i++
-		i = encodeVarintSsf(data, i, uint64(len(*m.Cmd)))
-		i += copy(data[i:], *m.Cmd)
-	}
-	if len(m.Args) > 0 {
-		for _, s := range m.Args {
-			data[i] = 0x12
-			i++
-			l = len(s)
-			for l >= 1<<7 {
-				data[i] = uint8(uint64(l)&0x7f | 0x80)
-				l >>= 7
-				i++
-			}
-			data[i] = uint8(l)
-			i++
-			i += copy(data[i:], s)
-		}
+		i = encodeVarintSsf(data, i, uint64(len(*m.Content)))
+		i += copy(data[i:], *m.Content)
 	}
 	if m.XXX_unrecognized != nil {
 		i += copy(data[i:], m.XXX_unrecognized)
@@ -405,7 +392,7 @@ func (m *CtrlRequest) MarshalTo(data []byte) (int, error) {
 	return i, nil
 }
 
-func (m *CtrlResponse) Marshal() (data []byte, err error) {
+func (m *AdminRequest) Marshal() (data []byte, err error) {
 	size := m.Size()
 	data = make([]byte, size)
 	n, err := m.MarshalTo(data)
@@ -415,21 +402,47 @@ func (m *CtrlResponse) Marshal() (data []byte, err error) {
 	return data[:n], nil
 }
 
-func (m *CtrlResponse) MarshalTo(data []byte) (int, error) {
+func (m *AdminRequest) MarshalTo(data []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
 	_ = l
-	if m.ErrCode != nil {
+	if m.Line != nil {
+		data[i] = 0xa
+		i++
+		i = encodeVarintSsf(data, i, uint64(len(*m.Line)))
+		i += copy(data[i:], *m.Line)
+	}
+	if m.XXX_unrecognized != nil {
+		i += copy(data[i:], m.XXX_unrecognized)
+	}
+	return i, nil
+}
+
+func (m *AdminResponse) Marshal() (data []byte, err error) {
+	size := m.Size()
+	data = make([]byte, size)
+	n, err := m.MarshalTo(data)
+	if err != nil {
+		return nil, err
+	}
+	return data[:n], nil
+}
+
+func (m *AdminResponse) MarshalTo(data []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if m.Close != nil {
 		data[i] = 0x8
 		i++
-		i = encodeVarintSsf(data, i, uint64(*m.ErrCode))
-	}
-	if m.Response != nil {
-		data[i] = 0x12
+		if *m.Close {
+			data[i] = 1
+		} else {
+			data[i] = 0
+		}
 		i++
-		i = encodeVarintSsf(data, i, uint64(len(*m.Response)))
-		i += copy(data[i:], *m.Response)
 	}
 	if m.XXX_unrecognized != nil {
 		i += copy(data[i:], m.XXX_unrecognized)
@@ -527,18 +540,12 @@ func (m *EventACK) Size() (n int) {
 	return n
 }
 
-func (m *CtrlRequest) Size() (n int) {
+func (m *AdminEvent) Size() (n int) {
 	var l int
 	_ = l
-	if m.Cmd != nil {
-		l = len(*m.Cmd)
+	if m.Content != nil {
+		l = len(*m.Content)
 		n += 1 + l + sovSsf(uint64(l))
-	}
-	if len(m.Args) > 0 {
-		for _, s := range m.Args {
-			l = len(s)
-			n += 1 + l + sovSsf(uint64(l))
-		}
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -546,15 +553,24 @@ func (m *CtrlRequest) Size() (n int) {
 	return n
 }
 
-func (m *CtrlResponse) Size() (n int) {
+func (m *AdminRequest) Size() (n int) {
 	var l int
 	_ = l
-	if m.ErrCode != nil {
-		n += 1 + sovSsf(uint64(*m.ErrCode))
-	}
-	if m.Response != nil {
-		l = len(*m.Response)
+	if m.Line != nil {
+		l = len(*m.Line)
 		n += 1 + l + sovSsf(uint64(l))
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *AdminResponse) Size() (n int) {
+	var l int
+	_ = l
+	if m.Close != nil {
+		n += 2
 	}
 	if m.XXX_unrecognized != nil {
 		n += len(m.XXX_unrecognized)
@@ -980,7 +996,7 @@ func (m *EventACK) Unmarshal(data []byte) error {
 	}
 	return nil
 }
-func (m *CtrlRequest) Unmarshal(data []byte) error {
+func (m *AdminEvent) Unmarshal(data []byte) error {
 	l := len(data)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1003,15 +1019,15 @@ func (m *CtrlRequest) Unmarshal(data []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: CtrlRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: AdminEvent: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: CtrlRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: AdminEvent: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Cmd", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Content", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -1037,36 +1053,7 @@ func (m *CtrlRequest) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			s := string(data[iNdEx:postIndex])
-			m.Cmd = &s
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Args", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSsf
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[iNdEx]
-				iNdEx++
-				stringLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthSsf
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Args = append(m.Args, string(data[iNdEx:postIndex]))
+			m.Content = &s
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -1090,7 +1077,7 @@ func (m *CtrlRequest) Unmarshal(data []byte) error {
 	}
 	return nil
 }
-func (m *CtrlResponse) Unmarshal(data []byte) error {
+func (m *AdminRequest) Unmarshal(data []byte) error {
 	l := len(data)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1113,35 +1100,15 @@ func (m *CtrlResponse) Unmarshal(data []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: CtrlResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: AdminRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: CtrlResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: AdminRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ErrCode", wireType)
-			}
-			var v int32
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowSsf
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[iNdEx]
-				iNdEx++
-				v |= (int32(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.ErrCode = &v
-		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Response", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Line", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -1167,8 +1134,80 @@ func (m *CtrlResponse) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			s := string(data[iNdEx:postIndex])
-			m.Response = &s
+			m.Line = &s
 			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSsf(data[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthSsf
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, data[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AdminResponse) Unmarshal(data []byte) error {
+	l := len(data)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSsf
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AdminResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AdminResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Close", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSsf
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				v |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			b := bool(v != 0)
+			m.Close = &b
 		default:
 			iNdEx = preIndex
 			skippy, err := skipSsf(data[iNdEx:])

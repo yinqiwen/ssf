@@ -204,9 +204,9 @@ func rpc(processor string, request proto.Message, timeout time.Duration, wr io.W
 		return res, nil
 	case <-timeoutTicker:
 		triggerClientSessionRes(nil, id)
-		return nil, ErrCommandTimeout
+		return nil, ErrRPCTimeout
 	}
-	return nil, ErrCommandTimeout
+	return nil, ErrRPCTimeout
 }
 
 func response(res proto.Message, request *Event, wr io.Writer) error {

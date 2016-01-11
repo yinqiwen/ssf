@@ -5,12 +5,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/glog"
 	"github.com/yinqiwen/gotoolkit/gstat"
+	"github.com/yinqiwen/gotoolkit/ots"
 )
 
 var procipc = &ipchannel{}
@@ -37,13 +39,12 @@ func getProcessorName() string {
 	return procConfig.Name
 }
 
-//Processor define go version sub processor interface
+//Processor define  sub processor interface
 type Processor interface {
 	OnStart() error
 	OnStop() error
 	OnRPC(request proto.Message) proto.Message
 	OnMessage(msg proto.Message, hashCode uint64)
-	//OnEvent(event *Event)
 }
 
 type processorEventHander struct {
@@ -68,7 +69,16 @@ func (proc *processorEventHander) OnEvent(event *Event, conn io.ReadWriteCloser)
 			if event.GetType() == EventType_RESPONSE {
 				triggerClientSessionRes(event.Msg, event.GetHashCode())
 			} else {
-				res := procConfig.Proc.OnRPC(event.Msg)
+				var res proto.Message
+				if admin, ok := event.Msg.(*AdminRequest); ok {
+					err := ots.Handle(admin.GetLine(), nil)
+					res = &AdminResponse{}
+					if err == io.EOF {
+						res.(*AdminResponse).Close = proto.Bool(true)
+					}
+				} else {
+					res = procConfig.Proc.OnRPC(event.Msg)
+				}
 				response(res, event, procipc)
 			}
 		}
@@ -115,6 +125,19 @@ func runProcessor(config *ProcessorConfig) error {
 	}
 	config.Proc.OnStart()
 	go procipc.evloop()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		for s := range c {
+			// Stop when receive signal Interrupt
+			if s == os.Interrupt {
+				config.Proc.OnStop()
+				os.Exit(0)
+			}
+		}
+	}()
+
 	for {
 		err := connectIPCServer(config)
 		if nil != err {

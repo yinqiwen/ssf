@@ -26,13 +26,12 @@ message EventACK{
     optional uint64 mask = 1;
 }
 
-message CtrlRequest{
-    optional string cmd = 1;
-    repeated string args = 2;
+message AdminEvent{
+    optional string content = 1;
 }
-
-message CtrlResponse{
-    optional int32 errCode = 1;
-    optional string response = 2;
+message AdminRequest{
+    optional string line = 1;
 }
-
+message AdminResponse{
+    optional bool close = 1;
+}

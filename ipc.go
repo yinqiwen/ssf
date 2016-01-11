@@ -82,6 +82,40 @@ func init() {
 	atomic.StorePointer(&ssfDispatchTable, unsafe.Pointer(dis))
 }
 
+func ps(args []string, wr io.Writer) error {
+	for _, ic := range getDispatchTable().allChannels {
+		fmt.Fprintf(wr, "%s     %s\n", ic.name, "running")
+	}
+	return nil
+}
+
+func cd(args []string, wr io.Writer) error {
+	name := args[0]
+	ic := getIPChannelsByName(name)
+	if nil == ic {
+		return ErrNoProcessor
+	}
+	if rw, ok := wr.(io.ReadWriter); ok {
+		buf := make([]byte, 1024)
+		for {
+			n, err := rw.Read(buf)
+			if nil != err {
+				return err
+			}
+			if n > 1024 {
+				fmt.Fprintf(rw, "Too long command from input.\n")
+				return nil
+			}
+			// var adminReq AdminRequest
+			// line := string(buf[0:n])
+			// adminReq.Line = &line
+			// res, err := LocalRPC(name, &adminReq, 0)
+
+		}
+	}
+	return nil
+}
+
 func getDispatchTable() *dispatchTable {
 	return (*dispatchTable)(atomic.LoadPointer(&ssfDispatchTable))
 }
@@ -145,13 +179,22 @@ func addIPChannel(unixConn net.Conn) *ipchannel {
 }
 
 func dispatch(event *Event) error {
-
+	if len(event.GetTo()) > 0 {
+		ic := getIPChannelsByName(event.GetTo())
+		if nil == ic {
+			return ErrNoProcessor
+		}
+		return writeEvent(event, ic)
+	}
 	node := getNodeByHash(event.GetHashCode())
 	if nil == node {
 		return ErrNoNode
 	}
 	if isSelfNode(node) {
 		ics := getIPChannelsByType(event.GetMsgType())
+		if len(ics) == 0 {
+			return ErrNoProcessor
+		}
 		for _, ic := range ics {
 			//ic.Write(event.Raw)
 			writeEvent(event, ic)
@@ -169,9 +212,11 @@ func (ipc *procIPCEventHandler) OnEvent(event *Event, conn io.ReadWriteCloser) {
 		switch event.GetMsgType() {
 		case proto.MessageName((*HeartBeat)(nil)):
 			var hbres HeartBeat
-			res := true
-			hbres.Res = &res
+			hbres.Res = proto.Bool(true)
 			notify(&hbres, 0, conn)
+		case proto.MessageName((*AdminEvent)(nil)):
+			event.decode()
+            
 		default:
 			dispatch(event)
 		}
@@ -189,6 +234,7 @@ func (ipc *procIPCEventHandler) OnEvent(event *Event, conn io.ReadWriteCloser) {
 	}
 }
 
+//LocalRPC would RPC specified processor with given proto request & wait for response
 func LocalRPC(processor string, request proto.Message, timeout time.Duration) (proto.Message, error) {
 	var channel io.Writer
 	if isFrameworkProcessor() {
@@ -204,21 +250,4 @@ func LocalRPC(processor string, request proto.Message, timeout time.Duration) (p
 		channel = procipc
 	}
 	return rpc(processor, request, timeout, channel)
-}
-
-//LocalCommand send command to given procesor and return response from the processor
-func LocalCommand(processor string, cmd string, args []string, timeout time.Duration) (int32, string) {
-	var req CtrlRequest
-	req.Args = args
-	req.Cmd = &cmd
-	res, err := LocalRPC(processor, &req, timeout)
-	if nil != err {
-		return -1, err.Error()
-	}
-	if ctrlres, ok := res.(*CtrlResponse); !ok {
-		return -1, fmt.Sprintf("Invalid type for control response:%T", res)
-	} else {
-		return ctrlres.GetErrCode(), ctrlres.GetResponse()
-	}
-	return 0, ""
 }
