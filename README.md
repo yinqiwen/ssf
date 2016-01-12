@@ -18,6 +18,13 @@ Simple streaming process framework
     + Multi language support
 - Write Ahead Log
     + Cache data when cluster do failover work or some cluster node is temporary unavailable. 
+- Online Trouble Shooting
+    + Use 'telent' to attach running process and eneter 'otsc' to enter online trouble shooting interactive mode.
+
+# Disvantages
+- No message delivery guarantees
+    + One-way message delivery between nodes. 
+    + Message may lost when cluster failover, process restart, etc.
 
 # Example
 
