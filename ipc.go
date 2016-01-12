@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -84,35 +85,60 @@ func init() {
 
 func ps(args []string, wr io.Writer) error {
 	for _, ic := range getDispatchTable().allChannels {
-		fmt.Fprintf(wr, "%s     %s\n", ic.name, "running")
+		status := "connected"
+		if ic.unixConn == nil {
+			status = "disconnect"
+		}
+		fmt.Fprintf(wr, "%s     %s\n", ic.name, status)
 	}
 	return nil
+}
+
+type writeBack struct {
+	wr io.Writer
 }
 
 func cd(args []string, wr io.Writer) error {
 	name := args[0]
 	ic := getIPChannelsByName(name)
-	if nil == ic {
+	if nil == ic || ic.unixConn == nil {
 		return ErrNoProcessor
 	}
 	if rw, ok := wr.(io.ReadWriter); ok {
+		fmt.Fprintf(wr, "Enter interactive mode for processor:%s\n", name)
+		var adminReq AdminRequest
+		adminReq.Line = proto.String("help")
+		LocalRPC(name, &adminReq, &writeBack{wr}, 0)
 		buf := make([]byte, 1024)
 		for {
 			n, err := rw.Read(buf)
 			if nil != err {
-				return err
+				break
 			}
 			if n > 1024 {
 				fmt.Fprintf(rw, "Too long command from input.\n")
-				return nil
+				continue
 			}
-			// var adminReq AdminRequest
-			// line := string(buf[0:n])
-			// adminReq.Line = &line
-			// res, err := LocalRPC(name, &adminReq, 0)
-
+			adminReq.Line = proto.String(strings.TrimSpace(string(buf[0:n])))
+			res, err := LocalRPC(name, &adminReq, &writeBack{wr}, 0)
+			if nil != err {
+				fmt.Fprintf(wr, "%v\n", err)
+				if err == ErrProcessorDisconnect {
+					break
+				}
+				continue
+			}
+			adminRes, ok := res.(*AdminResponse)
+			if !ok {
+				fmt.Fprintf(wr, "Invalid response while receive %T\n", res)
+				continue
+			}
+			if adminRes.GetClose() {
+				break
+			}
 		}
 	}
+	fmt.Fprintf(wr, "Exit interactive mode for processor:%s\n", name)
 	return nil
 }
 
@@ -216,7 +242,11 @@ func (ipc *procIPCEventHandler) OnEvent(event *Event, conn io.ReadWriteCloser) {
 			notify(&hbres, 0, conn)
 		case proto.MessageName((*AdminEvent)(nil)):
 			event.decode()
-            
+			attach := getSessionAttach(event.GetHashCode())
+			if nil != attach {
+				attach.(*writeBack).wr.Write([]byte(event.Msg.(*AdminEvent).GetContent()))
+			}
+
 		default:
 			dispatch(event)
 		}
@@ -232,22 +262,4 @@ func (ipc *procIPCEventHandler) OnEvent(event *Event, conn io.ReadWriteCloser) {
 			//hanlder event
 		}
 	}
-}
-
-//LocalRPC would RPC specified processor with given proto request & wait for response
-func LocalRPC(processor string, request proto.Message, timeout time.Duration) (proto.Message, error) {
-	var channel io.Writer
-	if isFrameworkProcessor() {
-		ic := getIPChannelsByName(processor)
-		if nil == ic || ic.unixConn == nil {
-			return nil, fmt.Errorf("No connected processor:%s", processor)
-		}
-		channel = ic
-	} else {
-		if procipc.unixConn == nil {
-			return nil, ErrSSFDisconnect
-		}
-		channel = procipc
-	}
-	return rpc(processor, request, timeout, channel)
 }

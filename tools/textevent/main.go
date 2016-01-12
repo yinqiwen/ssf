@@ -40,7 +40,7 @@ func main() {
 		}
 		c := conns[cursor]
 		cursor++
-		err := ssf.WriteEvent(rawMsg, 1, 0, c)
+		err := ssf.Notify(rawMsg, 1, c)
 		if nil != err {
 			fmt.Printf("Failed to send text event to %v for reason:%v.\n", c.RemoteAddr(), err)
 		}

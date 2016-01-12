@@ -49,7 +49,7 @@ func processEventConnection(c io.ReadWriteCloser, decodeEvent bool, hander ipcEv
 			ots.ProcessTroubleShooting(c)
 		} else {
 			glog.Errorf("Invalid magic header:%s", string(magic))
-
+            c.Close()
 		}
 	}
 }
@@ -83,9 +83,8 @@ func startClusterServer(laddr string) error {
 		return fmt.Errorf("IPC file:%s is locked by reason:%v", ipcAddr, err)
 	}
 	os.Remove(ipcAddr)
-
-	ots.RegisterHandler("PS", ps, 0, 0, "PS                List all processors")
-	ots.RegisterHandler("CD", cd, 1, 1, "CD  <Processor>   Enter sub-processor online trouble shooting mode")
+	ots.RegisterHandler("ps", ps, 0, 0, "ps                                 list all processors")
+	ots.RegisterHandler("cd", cd, 1, 1, "cd  <Processor>                    enter interactive mode for the processor")
 
 	l, err := net.Listen("unix", ipcAddr)
 	if nil != err {

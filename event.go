@@ -150,6 +150,9 @@ func readEvent(reader io.Reader, ignoreMagic, decodeBody bool) (*Event, error) {
 }
 
 func notify(msg proto.Message, hashCode uint64, writer io.Writer) error {
+	if nil == msg {
+		return ErrEmptyProto
+	}
 	var event Event
 	event.HashCode = &hashCode
 	event.Msg = msg
@@ -157,17 +160,33 @@ func notify(msg proto.Message, hashCode uint64, writer io.Writer) error {
 	return writeEvent(&event, writer)
 }
 
-var clientSessions = make(map[uint64]chan proto.Message)
+type sessionData struct {
+	res    chan proto.Message
+	attach interface{}
+}
+
+var clientSessions = make(map[uint64]*sessionData)
 var clientSessionIDSeed = uint64(0)
 var clientSessionsLock sync.Mutex
 
-func addClientRPCSession() (uint64, chan proto.Message) {
+func getSessionAttach(id uint64) interface{} {
+	clientSessionsLock.Lock()
+	defer clientSessionsLock.Unlock()
+	data, ok := clientSessions[id]
+	if !ok {
+		return nil
+	}
+	return data.attach
+}
+
+func addClientRPCSession(attach interface{}) (uint64, chan proto.Message) {
 	clientSessionsLock.Lock()
 	defer clientSessionsLock.Unlock()
 	id := clientSessionIDSeed
 	clientSessionIDSeed++
 	ch := make(chan proto.Message)
-	clientSessions[id] = ch
+	sdata := &sessionData{ch, attach}
+	clientSessions[id] = sdata
 	return id, ch
 }
 
@@ -175,17 +194,20 @@ func triggerClientSessionRes(res proto.Message, hashCode uint64) {
 	clientSessionsLock.Lock()
 	defer clientSessionsLock.Unlock()
 	if nil != res {
-		ch, ok := clientSessions[hashCode]
+		data, ok := clientSessions[hashCode]
 		if !ok {
 			return
 		}
-		ch <- res
+		data.res <- res
 	}
 	delete(clientSessions, hashCode)
 }
 
-func rpc(processor string, request proto.Message, timeout time.Duration, wr io.Writer) (proto.Message, error) {
-	id, rch := addClientRPCSession()
+func rpc(processor string, request proto.Message, timeout time.Duration, attach interface{}, wr io.Writer) (proto.Message, error) {
+	if nil == request {
+		return nil, ErrEmptyProto
+	}
+	id, rch := addClientRPCSession(attach)
 	defer close(rch)
 	var event Event
 	event.HashCode = &id
@@ -197,6 +219,10 @@ func rpc(processor string, request proto.Message, timeout time.Duration, wr io.W
 	err := writeEvent(&event, wr)
 	if nil != err {
 		return nil, err
+	}
+	if timeout == 0 {
+		res := <-rch
+		return res, nil
 	}
 	timeoutTicker := time.NewTicker(timeout).C
 	select {
@@ -210,6 +236,9 @@ func rpc(processor string, request proto.Message, timeout time.Duration, wr io.W
 }
 
 func response(res proto.Message, request *Event, wr io.Writer) error {
+	if nil == res {
+		return ErrEmptyProto
+	}
 	var event Event
 	event.HashCode = request.HashCode
 	event.Msg = res

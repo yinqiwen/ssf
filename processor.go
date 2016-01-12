@@ -29,7 +29,7 @@ func init() {
 }
 
 func isFrameworkProcessor() bool {
-	return isSSFProcessor
+	return !isSSFProcessor
 }
 
 func getProcessorName() string {
@@ -39,12 +39,21 @@ func getProcessorName() string {
 	return procConfig.Name
 }
 
-//Processor define  sub processor interface
-type Processor interface {
-	OnStart() error
-	OnStop() error
-	OnRPC(request proto.Message) proto.Message
-	OnMessage(msg proto.Message, hashCode uint64)
+
+type adminEventWriter struct {
+	hashCode uint64
+}
+
+func (wr *adminEventWriter) Write(p []byte) (n int, err error) {
+	var event AdminEvent
+	event.Content = proto.String(string(p))
+	err = Emit(&event, wr.hashCode)
+	if nil != err {
+		n = 0
+	} else {
+		n = len(p)
+	}
+	return
 }
 
 type processorEventHander struct {
@@ -71,7 +80,7 @@ func (proc *processorEventHander) OnEvent(event *Event, conn io.ReadWriteCloser)
 			} else {
 				var res proto.Message
 				if admin, ok := event.Msg.(*AdminRequest); ok {
-					err := ots.Handle(admin.GetLine(), nil)
+					err := ots.Handle(admin.GetLine(), &adminEventWriter{event.GetHashCode()})
 					res = &AdminResponse{}
 					if err == io.EOF {
 						res.(*AdminResponse).Close = proto.Bool(true)
@@ -89,14 +98,7 @@ func (proc *processorEventHander) OnEvent(event *Event, conn io.ReadWriteCloser)
 	}()
 }
 
-//ProcessorConfig is the start option
-type ProcessorConfig struct {
-	Home         string
-	ClusterName  string
-	Proc         Processor
-	MaxGORoutine int32
-	Name         string
-}
+
 
 func connectIPCServer(config *ProcessorConfig) error {
 	os.MkdirAll(config.Home+"/ipc", 0770)
@@ -150,8 +152,7 @@ func runProcessor(config *ProcessorConfig) error {
 	}
 }
 
-//StartProcessor init & launch go processor
-func StartProcessor(config *ProcessorConfig) error {
+func startProcessor(config *ProcessorConfig) error {
 	if len(config.ClusterName) == 0 {
 		return ErrNoClusterName
 	}
@@ -172,12 +173,4 @@ func StartProcessor(config *ProcessorConfig) error {
 	procConfig = config
 	runProcessor(config)
 	return nil
-}
-
-//Emit would write msg to SSF framework over IPC unix socket
-func Emit(msg proto.Message, hashCode uint64) error {
-	if nil == procipc.unixConn {
-		return ErrSSFDisconnect
-	}
-	return notify(msg, hashCode, procipc)
 }

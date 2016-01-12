@@ -18,18 +18,6 @@ import (
 // 	OnStop() error
 // }
 
-//ClusterConfig :SSF cluster launch option
-type ClusterConfig struct {
-	ZookeeperServers []string
-	SSFServers       []string
-	//Handler          EventProcessor
-	ListenAddr  string
-	ProcHome    string
-	ClusterName string
-	Weight      uint32
-	Dispatch    map[string][]string
-}
-
 type clusterTopo struct {
 	allNodes       []Node
 	partitions     []Partition
@@ -134,16 +122,14 @@ func buildNodeTopoFromConfig() {
 	saveClusterTopo(topo)
 }
 
-//HashCode return the md5 hashcode of raw bytes
-func HashCode(s []byte) uint64 {
+func stringHashCode(s []byte) uint64 {
 	sum := md5.Sum(s)
 	a := binary.LittleEndian.Uint64(sum[0:8])
 	b := binary.LittleEndian.Uint64(sum[8:16])
 	return a ^ b
 }
 
-//Start launch ssf cluster server
-func Start(cfg *ClusterConfig) {
+func start(cfg *ClusterConfig) {
 	ssfRunning = true
 	ssfCfg = *cfg
 	if nil == cfg.Dispatch {
@@ -164,7 +150,7 @@ func Start(cfg *ClusterConfig) {
 		panic("Invalid config to start ssf.")
 	}
 	initRoutine()
-    updateDispatchTable(ssfCfg.Dispatch)
+	updateDispatchTable(ssfCfg.Dispatch)
 	if len(ssfCfg.ListenAddr) > 0 {
 		err := startClusterServer(ssfCfg.ListenAddr)
 		if nil != err {
@@ -175,14 +161,6 @@ func Start(cfg *ClusterConfig) {
 	}
 }
 
-//Stop ssf cluster server
-func Stop() {
+func stop() {
 	ssfRunning = false
-	//ssfCfg.Handler.OnStop()
-}
-
-//UpdateConfig update current config on the fly
-func UpdateConfig(cfg *ClusterConfig) {
-	//Currently, only update processor dispatch config
-	updateDispatchTable(cfg.Dispatch)
 }
