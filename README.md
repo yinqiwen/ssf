@@ -1,5 +1,5 @@
 # SSF
-Simple streaming process framework
+A BSD licensed simple streaming process framework.
 
 # Dependency
 - [glog](https://github.com/golang/glog)

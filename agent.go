@@ -1,10 +1,3 @@
-/*
-* @Author: yinqiwen
-* @Date:   2015-11-24 10:33:22
-* @Last Modified by:   wangqiying
-* @Last Modified time: 2015-11-30 15:14:19
- */
-
 package ssf
 
 import (
