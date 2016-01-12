@@ -1,4 +1,4 @@
-# Example
+# Word Count
 Simple word count example of how to use ssf to build a simple distribute stream processing system.
 
 # Setup
@@ -10,7 +10,7 @@ Before test, we need build 3 apps first.
 
 Follow the steps below to build the 3 apps.
 
-    $ go build github.com/yinqiwen/ssf/example/ssf_main
+    $ go build github.com/yinqiwen/ssf/tools/ssf_main
     $ go build github.com/yinqiwen/ssf/example/wc
     $ go build github.com/yinqiwen/ssf/tools/textevent       
     
@@ -29,12 +29,14 @@ The example ssf framework process usage:
         application home dir (default "./")
      -listen string
         listen addr (default "127.0.0.1:48100")
+      -dispatch string
+        message dispatch config, format <processor>/<proto name>[,<proto name>][&<processor>/<proto name>[,<proto name>...] (default "wc/ssf.RawMessage,main.Word")
       ....(some glog options)
 
 It's better to launch the 2 process in 2 different terminal consoles to watch the output.
 
-    $ bin/ssf_main -cluster example/127.0.0.1:48100,127.0.0.1:48101 -listen 127.0.0.1:48100 -home ./node0 -logtostderr
-    $ bin/ssf_main -cluster example/127.0.0.1:48100,127.0.0.1:48101 -listen 127.0.0.1:48101 -home ./node1 -logtostderr
+    $ bin/ssf_main -cluster example/127.0.0.1:48100,127.0.0.1:48101 -dispatch wc/ssf.RawMessage,main.Word -logtostderr -listen 127.0.0.1:48100 -home ./node0
+    $ bin/ssf_main -cluster example/127.0.0.1:48100,127.0.0.1:48101 -dispatch wc/ssf.RawMessage,main.Word -logtostderr -listen 127.0.0.1:48101 -home ./node1
 
 ## Launch Word Count Processor
 Launch word count processor for each SSF framework process.   

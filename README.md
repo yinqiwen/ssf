@@ -21,7 +21,7 @@ Simple streaming process framework
 
 # Example
 
-- [Word Count](https://github.com/yinqiwen/ssf/tree/master/examples)
+- [Word Count](https://github.com/yinqiwen/ssf/tree/master/examples/wc)
 
 
 
